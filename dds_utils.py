@@ -509,7 +509,6 @@ def compress_and_get_size(images_path, start_id, end_id, qp,
     if resolution and enforce_iframes:
         scale = f"scale=trunc(iw*{resolution}/2)*2:trunc(ih*{resolution}/2)*2"
         if not qp:
-            print('case 1')
             encoding_result = subprocess.run(["ffmpeg", "-y",
                                               "-loglevel", "error",
                                               "-start_number", str(start_id),
@@ -525,8 +524,6 @@ def compress_and_get_size(images_path, start_id, end_id, qp,
                                              stderr=subprocess.PIPE,
                                              universal_newlines=True)
         else:
-            print('case 2')
-            print(qp)
             encoding_result = subprocess.run(["ffmpeg", "-y",
                                               "-loglevel", "error",
                                               "-start_number", str(start_id),
@@ -544,7 +541,6 @@ def compress_and_get_size(images_path, start_id, end_id, qp,
                                              stderr=subprocess.PIPE,
                                              universal_newlines=True)
     else:
-        print('case 3')
         encoding_result = subprocess.run(["ffmpeg", "-y",
                                           "-start_number", str(start_id),
                                           "-i", f"{images_path}/%010d.png",

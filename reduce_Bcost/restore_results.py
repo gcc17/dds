@@ -4,8 +4,8 @@ import cv2 as cv
 import numpy as np
 import shutil
 from .streamB_utils import (find_region_same_id, region_iou)
-from dds_utils import (merge_boxes_in_results, Region)
-from dds_utils import (Results)
+from dds_utils import (merge_boxes_in_results, Region, Results, visualize_regions, \
+    visualize_single_regions)
 from collections import Counter
 
 
@@ -171,11 +171,9 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
                         most_iou = cur_iou
                 else:
                     if cur_iou > iou_thresh:         
-                        new_x0 = cur_req_new_region.x
-                        new_y0 = cur_req_new_region.y
                         req_new_regions_list.append(cur_req_new_region)
 
-        if len(req_new_regions_list) == 0:
+        if len(req_new_regions_list) == 0 or len(req_new_regions_list) > 1:
             continue
         
         for cur_req_new_region in req_new_regions_list:
@@ -220,7 +218,7 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
 
 def restore_track_regions_detection_box(pad_shift_results, merged_new_regions_dict, 
         track_new_regions_contain_dict, req_new_regions_dict, merged_new_regions_contain_dict,
-        merged_regions_maps, src_image_w, src_image_h,
+        merged_regions_maps, src_image_w, src_image_h, src_image_direc=None,
         iou_thresh=0.2):
     """Restore detection box to the location of corresponding regions
         Restore by iou between detection box and the proposed region
@@ -266,9 +264,6 @@ def restore_track_regions_detection_box(pad_shift_results, merged_new_regions_di
             continue
         
         for track_region_id, req_new_regions_list in overlap_req_new_regions_dict.items():
-            cur_track_merged_original_region = merged_new_regions_dict[track_region_id].original_region
-            cur_ori_x = cur_track_merged_original_region.x
-            cur_ori_y = cur_track_merged_original_region.y
 
             for cur_req_new_region in req_new_regions_list:
                 # get corresponding req_region info
@@ -307,24 +302,66 @@ def restore_track_regions_detection_box(pad_shift_results, merged_new_regions_di
                 ))
                 restored_req_regions_id.append(cur_req_new_region.region_id)
 
-                for contain_merged_region_id in track_new_regions_contain_dict[track_region_id]:
-                    cur_contain_merged_original_region = merged_new_regions_dict[contain_merged_region_id].original_region
-                    shift_x = cur_contain_merged_original_region.x - cur_ori_x
-                    shift_y = cur_contain_merged_original_region.y - cur_ori_y
-                    shift_result_x = max(0, result_x + shift_x)
-                    shift_result_x = min(shift_result_x, 1)
-                    shift_result_y = max(0, result_y + shift_y)
-                    shift_result_y = min(shift_result_y, 1)
-                    shift_result_w = min(result_w, 1-shift_result_x)
-                    shift_result_h = min(result_h, 1-shift_result_y)
-                    shift_fid = cur_contain_merged_original_region.fid
+            cur_track_merged_region = merged_new_regions_dict[track_region_id]
+            cur_track_merged_original_region = cur_track_merged_region.original_region
+            cur_ori_x = cur_track_merged_original_region.x
+            cur_ori_y = cur_track_merged_original_region.y
+            # print(f'tracked region fid {cur_track_merged_original_region.fid}, merged_region_id {track_region_id}, '
+            #     f'x {cur_ori_x}, y {cur_ori_y}')
+            fx = cur_track_merged_region.fx
+            fy = cur_track_merged_region.fy
+            
+            for (contain_merged_region_id, img_match_loc) in track_new_regions_contain_dict[track_region_id]:
+                cur_contain_merged_original_region = merged_new_regions_dict[contain_merged_region_id].original_region
+                # print(f'shifted region fid {cur_contain_merged_original_region.fid}, '
+                # f'merged_region_id {contain_merged_region_id}, '
+                # f'x {cur_contain_merged_original_region.x}, y {cur_contain_merged_original_region.y}')
 
-                    restored_pad_shift_results.append(Region(
-                        shift_fid, shift_result_x, shift_result_y, shift_result_w, shift_result_h, 
-                        single_pad_shift_result.conf, single_pad_shift_result.label, single_pad_shift_result.resolution,
-                        single_pad_shift_result.origin
-                    ))
+                box_new_loc_x = single_pad_shift_result.x - cur_track_merged_region.shift_x
+                box_new_loc_y = single_pad_shift_result.y - cur_track_merged_region.shift_y
+                match_new_loc_x = img_match_loc[0] / src_image_w + cur_ori_x
+                match_new_loc_y = img_match_loc[1] / src_image_h + cur_ori_y
+                box_new_region = Region(cur_track_merged_original_region.fid, box_new_loc_x, box_new_loc_y, \
+                    single_pad_shift_result.w, single_pad_shift_result.h, \
+                    1.0, 'object', 1.0)
+                match_new_region = Region(-1, match_new_loc_x, match_new_loc_y, \
+                    cur_contain_merged_original_region.w, cur_contain_merged_original_region.h, -1, 'object', 1.0)
+                
+                if src_image_direc:
+                    visualize_single_regions(box_new_region, src_image_direc)
 
+                # print(f'box_new_loc: ({box_new_loc_x, box_new_loc_y})')
+                # print(f'match_new_loc: ({match_new_loc_x, match_new_loc_y})')
+                box_region_iou = region_iou(box_new_region, match_new_region)
+                # print(f'box_region_iou: {box_region_iou}')
+                if box_region_iou <= 1e-5:
+                    continue
+                
+                track_shift_x = (cur_contain_merged_original_region.x - match_new_loc_x) / fx
+                track_shift_y = (cur_contain_merged_original_region.y - match_new_loc_y) / fy
+                shift_result_x = cur_track_merged_original_region.x + \
+                    (box_new_loc_x-cur_track_merged_original_region.x) / fx
+                shift_result_y = cur_track_merged_original_region.y + \
+                    (box_new_loc_y-cur_track_merged_original_region.y) / fy
+
+                shift_result_x = max(0, shift_result_x + track_shift_x)
+                shift_result_x = min(shift_result_x, 1)
+                shift_result_y = max(0, shift_result_y + track_shift_y)
+                shift_result_y = min(shift_result_y, 1)
+                shift_result_w = min(box_new_region.w / fx, 1-shift_result_x)
+                shift_result_h = min(box_new_region.h / fy, 1-shift_result_y)
+                shift_fid = cur_contain_merged_original_region.fid
+                shift_region = Region(
+                    shift_fid, shift_result_x, shift_result_y, shift_result_w, shift_result_h, 
+                    single_pad_shift_result.conf, single_pad_shift_result.label, single_pad_shift_result.resolution,
+                    single_pad_shift_result.origin
+                )
+
+                if src_image_direc:
+                    visualize_single_regions(shift_region, src_image_direc, label='tracking')
+
+                restored_pad_shift_results.append(shift_region)
+                    
     return restored_pad_shift_results, restored_req_regions_id
         
 

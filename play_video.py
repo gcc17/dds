@@ -6,7 +6,8 @@ from backend.server import Server
 from frontend.client import Client
 from dds_utils import (ServerConfig, read_results_dict, Results, merge_boxes_in_results,
                        evaluate, write_stats)
-from reduce_Bcost.streamB_infer import (analyze_merge_regions)
+from reduce_Bcost.streamB_infer import (analyze_merge_regions, analyze_combined_methods,
+                        analyze_encoded_regions)
 from reduce_Bcost.streamB_utils import (draw_region_rectangle, prepare_high_low_images)
 import ipdb
 import shutil
@@ -36,7 +37,7 @@ def main(args):
     results, bw = None, None
     if args.req_regions_fname:
         mode = 'streamBpack'
-        logger.warning("Running stream B pad and merge")
+        logger.warning("Reduce streamB cost")
         server = Server(config)
         req_regions = read_results_dict(args.req_regions_fname)
         # ipdb.set_trace()
@@ -50,30 +51,14 @@ def main(args):
         for fid, region_list in mpeg_regions.items():
             for region_item in region_list:
                 mpeg_regions_result.append(region_item)
-        
-        if args.compare_gt:
-            gt_regions_dict = read_results_dict(args.ground_truth)
-        else:
-            gt_regions_dict = None
-        
-        low_image_direc = f"{args.high_images_path}-low_quality"
-        high_image_direc = f"{args.high_images_path}-high_quality"
-        if not (os.path.exists(low_image_direc) and os.path.exists(high_image_direc)):
-            prepare_high_low_images(args.high_images_path, high_image_direc, low_image_direc, 
-                    config.high_resolution, config.high_qp, config.low_resolution, config.low_qp, 
-                    args.enforce_iframes)
-        
-        results, bw = analyze_merge_regions(server, args.video_name, 
-                high_image_direc, low_image_direc, config.high_resolution,
-                req_regions_result, mpeg_regions_result, 
-                args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
-                cleanup=args.cleanup, gt_regions_dict=gt_regions_dict, 
-                out_cost_file=args.out_cost_file,
-                intersect_iou=args.intersect_iou,
-                resize_type=args.resize_type, area_upper_bound=args.area_upper_bound, 
-                fixed_ratio=args.fixed_ratio, fixed_area=args.fixed_area, 
-                merge_iou=args.merge_iou, track_region=args.track_region
-            )
+
+        results, bw = analyze_encoded_regions(
+            server, args.video_name, req_regions_result, mpeg_regions_result, 
+            args.percent_list, args.qp_list,
+            args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
+            cleanup=args.cleanup, out_cost_file=args.out_cost_file, intersect_iou=args.intersect_iou,
+            merge_iou=args.merge_iou
+        )
                 
     elif args.simulate:
         mode = "simulation"

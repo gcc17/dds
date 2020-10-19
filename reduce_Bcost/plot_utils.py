@@ -225,7 +225,7 @@ def read_logs(log_path):
         with open(log_path, 'r') as f:
             for line in f.readlines():
                 log_list.append(line.strip('\n'))
-    
+            
     return log_list
 
 
@@ -236,12 +236,23 @@ def read_stats_costs(stats_path=None, costs_path=None):
 
 
 # results/dashcam_1/dashcam_1_streamBpack_whole_0.07_whole_0.05_min_0.0_ratio_1_inter_0.2_merge_0.0
-def pick_list_item(target_list, target_metric, fname_len=15, target_video_name=None, 
+# _track_True_diff_0.1_frameinter_10
+# results/dashcam_1/dashcam_1_streamBpack_region_0.0_region_0.0_inter_0.2_merge_0.0
+# _track_False_diff_0.0_frameinter_0_[16, 24, 26]_[50, 75, 100]
+def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=None, 
         context_type=None, context_val=None, blank_type=None, blank_val=None,
         area_upper_bound=None, resize_type=None, resize_val=None, 
         inter_iou=None, merge_iou=None,
+        whether_track=None, diff_threshold=None, frame_interval=None,
+        qp_list=None, percent_list=None,
+        deal_with_comma=False,
         context_type_idx=3, context_val_idx=4, blank_type_idx=5, blank_val_idx=6, 
-        area_upper_bound_idx=8, resize_type_idx=9, resize_val_idx=10, inter_iou_idx=12, merge_iou_idx=14):
+        area_upper_bound_idx=8, resize_type_idx=9, resize_val_idx=10, 
+        # inter_iou_idx=12, merge_iou_idx=14, 
+        # whether_track_idx=16, diff_threshold_idx=18, frame_interval_idx=20,
+        inter_iou_idx=8, merge_iou_idx=10,
+        whether_track_idx=12, diff_threshold_idx=14, frame_interval_idx=16,
+        qp_list_idx=17, percent_list_idx=18):
 
     target_head = target_list[0].split(',')
     for idx, head_item in enumerate(target_head):
@@ -254,6 +265,16 @@ def pick_list_item(target_list, target_metric, fname_len=15, target_video_name=N
     for target_item in target_list[1:]:
         # read fname and video_name
         split_items = target_item.split(',')
+        if deal_with_comma:
+            last_item = (split_items[0].split('_'))[-1]
+            last_item = str(last_item)
+            next_item = str(split_items[1])
+            if last_item[0] == '[' and next_item[0] == ' ':
+                res_fname = ','.join(split_items[:5])
+                remain_items = split_items[5:]
+                split_items = [res_fname]
+                split_items.extend(remain_items)
+
         res_path = split_items[0]
         res_direc = os.path.split(res_path)[0]
         res_fname = os.path.split(res_path)[1]
@@ -328,7 +349,31 @@ def pick_list_item(target_list, target_metric, fname_len=15, target_video_name=N
                 continue
         elif merge_iou != None and (merge_iou != float(para_list[merge_iou_idx])):
             continue
-
+        if isinstance(whether_track, list):
+            if bool(para_list[whether_track_idx]) not in whether_track:
+                continue
+        elif whether_track != None and (whether_track != bool(para_list[whether_track_idx])):
+            continue
+        if isinstance(diff_threshold, list):
+            if float(para_list[diff_threshold_idx]) not in diff_threshold:
+                continue
+        elif diff_threshold != None and (diff_threshold != float(para_list[diff_threshold_idx])):
+            continue
+        if isinstance(frame_interval, list):
+            if int(para_list[frame_interval_idx]) not in frame_interval:
+                continue
+        elif frame_interval != None and (frame_interval != int(para_list[frame_interval_idx])):
+            continue
+        if isinstance(qp_list, list):
+            if para_list[qp_list_idx] not in qp_list_idx:
+                continue
+        elif qp_list and (qp_list != para_list[qp_list_idx]):
+            continue
+        if isinstance(percent_list, list):
+            if para_list[percent_list_idx] not in percent_list:
+                continue
+        elif percent_list != None and (str(percent_list) != para_list[percent_list_idx]):
+            continue
 
         method_name = '_'.join(para_list[context_type_idx:])
         if method_name not in target_result_dict.keys():
@@ -339,6 +384,8 @@ def pick_list_item(target_list, target_metric, fname_len=15, target_video_name=N
 
 
 def sort_by_second_list(lista, listb):
+    if len(lista) * len(listb) == 0:
+        return lista, listb
     zipped_ab = zip(lista, listb)
     sort_zipped = sorted(zipped_ab, key=lambda x: (x[1], x[0]))
     sort_result = zip(*sort_zipped)
@@ -763,16 +810,28 @@ def simple_cull(inputPoints, dominates, choose_metric=None):
         nonDominated = True
         while len(inputPoints) != 0 and rowNr < len(inputPoints):
             row = inputPoints[rowNr]
-            if dominates(candidateRow, row, choose_metric):
-                # If it is worse on all features remove the row from the array
-                inputPoints.remove(row)
-                dominatedPoints.add(tuple(row))
-            elif dominates(row, candidateRow, choose_metric):
-                nonDominated = False
-                dominatedPoints.add(tuple(candidateRow))
-                rowNr += 1
+            if choose_metric:
+                if dominates(candidateRow, row, choose_metric):
+                    # If it is worse on all features remove the row from the array
+                    inputPoints.remove(row)
+                    dominatedPoints.add(tuple(row))
+                elif dominates(row, candidateRow, choose_metric):
+                    nonDominated = False
+                    dominatedPoints.add(tuple(candidateRow))
+                    rowNr += 1
+                else:
+                    rowNr += 1
             else:
-                rowNr += 1
+                if dominates(candidateRow, row):
+                    # If it is worse on all features remove the row from the array
+                    inputPoints.remove(row)
+                    dominatedPoints.add(tuple(row))
+                elif dominates(row, candidateRow):
+                    nonDominated = False
+                    dominatedPoints.add(tuple(candidateRow))
+                    rowNr += 1
+                else:
+                    rowNr += 1
 
         if nonDominated:
             # add the non-dominated point to the Pareto frontier
@@ -782,3 +841,19 @@ def simple_cull(inputPoints, dominates, choose_metric=None):
         if len(inputPoints) == 0:
             break
     return paretoPoints, dominatedPoints
+
+
+def pareto_line_utils(ax, pair_list, dominate_func, x_idx=0, y_idx=1, choose_metric=None, plot_label=False):
+    paretoPoints, dominatedPoints = simple_cull(pair_list, dominate_func, choose_metric)
+    x_list = []
+    y_list = []
+    for single_pareto_point in paretoPoints:
+        x_list.append(single_pareto_point[x_idx])
+        y_list.append(single_pareto_point[y_idx])
+    
+    y_list, x_list = sort_by_second_list(y_list, x_list)
+    if plot_label:
+        ax.plot(x_list, y_list, label=plot_label)
+    else:
+        ax.plot(x_list, y_list)
+

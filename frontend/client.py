@@ -90,9 +90,9 @@ class Client:
         combine_elapsed = (timeit.default_timer() - combine_start)
         total_time += combine_elapsed
         total_time += total_infer_time
-        final_rpn_results = merge_boxes_in_results(
-            final_rpn_results.regions_dict, 
-            -1, self.config.suppression_threshold)
+        # final_rpn_results = merge_boxes_in_results(
+        #     final_rpn_results.regions_dict, 
+        #     -1, self.config.suppression_threshold)
         final_results.fill_gaps(number_of_frames)
 
         # Add RPN regions
@@ -221,10 +221,10 @@ class Client:
         total_time += combine_elapsed
         total_time += total_infer_time
 
-        total_req_regions = merge_boxes_in_results(total_req_regions.regions_dict, 
-            -1, self.config.suppression_threshold)
-        high_phase_results = merge_boxes_in_results(high_phase_results.regions_dict, 
-            self.config.low_threshold, self.config.suppression_threshold)
+        # total_req_regions = merge_boxes_in_results(total_req_regions.regions_dict, 
+        #     -1, self.config.suppression_threshold)
+        # high_phase_results = merge_boxes_in_results(high_phase_results.regions_dict, 
+        #     self.config.low_threshold, self.config.suppression_threshold)
 
         final_results.fill_gaps(number_of_frames)
         final_results.write(f"{video_name}")

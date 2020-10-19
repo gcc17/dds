@@ -4,10 +4,11 @@ import matplotlib.pyplot as plt
 from dds_utils import (read_results_dict, Results)
 from .plot_utils import (Ellipse, get_colors, read_stats_costs, confidence_ellipse, pick_list_item, \
     sort_by_second_list, find_best_stat_point, get_markers, each_trick_point, simple_cull, dominates_stat_acc, \
-    get_all_videos_data)
+    get_all_videos_data, pareto_line_utils, read_logs)
 import pandas as pd
 import shutil
 import ipdb
+from adjustText import adjust_text
 
 
 def compare_all_acc_cost(stats_path, costs_path, stats_metric='F1', costs_metric='frame-count',
@@ -534,5 +535,139 @@ def plot_pareto_line(file_direc, target_video_list, stats_metric='F1', costs_met
     plt.close()
     
 
+def compare_track_trick(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, plot_pareto=True,
+        diff_threshold_idx=15, frame_interval_idx=17):
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.12, 0.1, 0.85, 0.8])
+    ax.set_ylabel(stats_metric)
+    ax.set_xlabel(costs_metric)
+    if new_stat:
+        name_str = '2nd'
+    else:
+        name_str = 'overall'
+    if dds_as_gt:
+        name_str = name_str + '-dds'
+    else:
+        name_str = name_str + '-gt'
+    ax.set_title(name_str)
+    texts = []
+
+    stats_result_dict, stats_baseline_result_dict, costs_result_dict, costs_baseline_result_dict = \
+        get_all_videos_data(file_direc, target_video_list, new_stat, dds_as_gt, \
+        stats_metric, costs_metric)
+
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        if dds_as_gt and method_name == 'dds' and new_stat:
+            continue
+        ax.scatter(baseline_mean_cost, baseline_mean_stat)
+        texts.append(plt.text(baseline_mean_cost, baseline_mean_stat, method_name))
+    
+    # if plotting pareto lines, store data in a list and then run pareto selection algorithm
+    if plot_pareto:
+        mean_stat_cost_pair_list = []
+        mean_stat_list = []
+        mean_cost_list = []
+        
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_mean_cost = np.mean(list(method_result_dict.values()))          
+        method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+        method_name_list = method_name.split('_')
+        track_method_name = '_'.join([method_name_list[diff_threshold_idx], \
+            method_name_list[frame_interval_idx]])
+        ax.scatter(method_mean_cost, method_mean_stat)
+        texts.append(plt.text(method_mean_cost, method_mean_stat, track_method_name))
+        if plot_pareto:
+            mean_stat_cost_pair_list.append((method_mean_stat, method_mean_cost))
+    
+    # run pareto selection
+    paretoPoints, dominatedPoints = simple_cull(mean_stat_cost_pair_list, dominates_stat_acc, choose_metric)
+    for single_pareto_point in paretoPoints:
+        mean_stat_list.append(single_pareto_point[0])
+        mean_cost_list.append(single_pareto_point[1])
+    mean_stat_list, mean_cost_list = sort_by_second_list(mean_stat_list, mean_cost_list)
+    print('##############')
+    for idx in range(len(mean_stat_list)):
+        print(mean_stat_list[idx], mean_cost_list[idx])
+    print('##############')
+    ax.plot(mean_cost_list, mean_stat_list)
+
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()
 
             
+def compare_qp_trick(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None,
+        qp_list_idx=14, percent_list_idx=15):
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.12, 0.1, 0.85, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+
+    qp_percent_pair_list = [('[16, 24, 26]', '[50, 75, 100]'), ('[26]', '[100]'), ('[16]', '[100]')]
+    for idx, (qp_list, percent_list) in enumerate(qp_percent_pair_list):
+        stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+            target_video_name=target_video_list, qp_list=qp_list, percent_list=percent_list, deal_with_comma=True)
+        costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+            target_video_name=target_video_list, qp_list=qp_list, percent_list=percent_list, deal_with_comma=True)
+        
+        if idx == 0:
+            # baseline points
+            for method_name, method_result_dict in costs_baseline_result_dict.items():
+                baseline_mean_cost = np.mean(list(method_result_dict.values()))
+                baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+                if dds_as_gt and method_name == 'dds' and new_stat:
+                    continue
+                ax.scatter(baseline_mean_cost, baseline_mean_stat, label=method_name)
+        
+        mean_stat_cost_pair_list = []
+        for method_name, method_result_dict in costs_result_dict.items():
+            method_mean_cost = np.mean(list(method_result_dict.values()))
+            method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            mean_stat_cost_pair_list.append((method_mean_stat, method_mean_cost, method_name))
+        
+        print(mean_stat_cost_pair_list)
+        pareto_line_utils(ax, mean_stat_cost_pair_list, dominates_stat_acc, x_idx=1, y_idx=0, \
+            choose_metric=choose_metric, plot_label=f'{qp_list}-{percent_list}')
+    
+    ax.set_title('qp_percent_compare')
+    ax.set_ylabel(f'{stats_metric}')
+    ax.set_xlabel(f'{costs_metric}')
+    ax.legend(loc='best')
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()    

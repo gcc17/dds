@@ -8,6 +8,7 @@ from math import sqrt
 from .streamB_utils import (normalize_image, merge_one_frame_regions)
 from dds_utils import (Results)
 import copy
+from collections import OrderedDict
 
 
 def pad_single_req_region_context(original_region, region_id, context_whole_w, context_whole_h):
@@ -168,7 +169,7 @@ def pad_all_req_regions(req_regions_result, \
     cur_req_region_id = req_region_id_start
     cur_merged_region_id = merged_region_id_start
     req_new_regions_dict = {}
-    merged_new_regions_dict = {}
+    merged_new_regions_dict = OrderedDict()
     merged_new_regions_contain_dict = {}
     tmp_regions_direc = f'{video_result_name}-tmp_regions'
     os.makedirs(tmp_regions_direc, exist_ok=True)
@@ -199,7 +200,6 @@ def pad_all_req_regions(req_regions_result, \
         # read context and region image
         fname = f'{str(fid).zfill(10)}.png'
         region_image_path = os.path.join(region_image_direc, fname)
-        print(region_image_path)
         region_image = cv.imread(region_image_path)
         region_image = cv.cvtColor(region_image, cv.COLOR_BGR2RGB)
         context_image_path = os.path.join(context_image_direc, fname)
@@ -235,4 +235,148 @@ def pad_all_req_regions(req_regions_result, \
 
     return req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict, \
         tmp_regions_direc, src_image_w, src_image_h
+
+
+def crop_out_context_region(encoded_image, merged_new_region, src_image_w, src_image_h, \
+        context_padded_regions_direc):
+    abs_context_x = int(merged_new_region.original_region.x * src_image_w)
+    abs_context_y = int(merged_new_region.original_region.y * src_image_h)
+    abs_context_x1 = int(
+        (merged_new_region.original_region.x + merged_new_region.original_region.w) * src_image_w
+    )
+    abs_context_y1 = int(
+        (merged_new_region.original_region.y + merged_new_region.original_region.h) * src_image_h
+    )
+    context_padded_region = encoded_image[abs_context_y:abs_context_y1, abs_context_x:abs_context_x1, :]
+    context_padded_region = cv.cvtColor(context_padded_region, cv.COLOR_RGB2BGR)
+    context_padded_region_path = os.path.join(
+        context_padded_regions_direc, f"region-{merged_new_region.region_id}.png"
+    )
+    cv.imwrite(context_padded_region_path, context_padded_region, [cv.IMWRITE_PNG_COMPRESSION, 0])
+
+
+def crop_out_blank_region(encoded_image, merged_new_region, src_image_w, src_image_h, \
+        blank_whole_w, blank_whole_h, blank_padded_regions_direc):
+    # Crop out context padded region and put on the normalization area
+
+    abs_context_x = int(merged_new_region.original_region.x * src_image_w)
+    abs_context_y = int(merged_new_region.original_region.y * src_image_h)
+    abs_context_w = int(merged_new_region.original_region.w * src_image_w)
+    abs_context_h = int(merged_new_region.original_region.h * src_image_h)
+    
+    # Ensure blank-padded region not exceed the original frame size
+    abs_blank_w = min( int(blank_whole_w*src_image_w), (src_image_w-abs_context_w) // 2 )
+    abs_blank_h = min( int(blank_whole_h*src_image_h), (src_image_h-abs_context_h) // 2 )
+    abs_total_w = abs_context_w + 2*abs_blank_w
+    abs_total_h = abs_context_h + 2*abs_blank_h
+
+    # Set the blank-padded region background as normalization value
+    blank_padded_region = np.zeros((abs_total_h, abs_total_w, 3), dtype=np.uint8)
+    blank_padded_region = normalize_image(blank_padded_region)
+    blank_padded_region[abs_blank_h:abs_blank_h+abs_context_h, abs_blank_w:abs_blank_w+abs_context_w, :] = \
+        encoded_image[abs_context_y:abs_context_y+abs_context_h, abs_context_x:abs_context_x+abs_context_w, :]
+    
+    # Save region content
+    blank_padded_region = cv.cvtColor(blank_padded_region, cv.COLOR_RGB2BGR)
+    blank_padded_region_path = os.path.join(
+        blank_padded_regions_direc, f'region-{merged_new_region.region_id}.png'
+    )
+    cv.imwrite(blank_padded_region_path, blank_padded_region, [cv.IMWRITE_PNG_COMPRESSION, 0])
+
+    # Change merged_new_region xywh after blank padding
+    merged_new_region.x = merged_new_region.original_region.x - abs_blank_w / src_image_w
+    merged_new_region.y = merged_new_region.original_region.y - abs_blank_h / src_image_h
+    merged_new_region.w = merged_new_region.original_region.w + 2*abs_blank_w / src_image_w
+    merged_new_region.h = merged_new_region.original_region.h + 2*abs_blank_h / src_image_h
+
+    abs_merged_w = int(merged_new_region.w * src_image_w)
+    abs_merged_h = int(merged_new_region.h * src_image_h)
+    if not (abs_merged_w == abs_total_w and abs_merged_h == abs_total_h):
+        merged_new_region.w = (abs_total_w + 0.5) / src_image_w
+        merged_new_region.h = (abs_total_h + 0.5) / src_image_h
+    if abs_merged_h * abs_merged_w == 0:
+        return None
+    return merged_new_region
+
+
+def pad_encoded_regions(req_regions_result, video_result_name, merged_images_direc, 
+        context_padding_type, context_val, blank_padding_type, blank_val, \
+        merge_iou=0.0, req_region_id_start=0, merged_region_id_start=0, track_region=False):
+
+    # Pad encoded regions, crop out region from merged_images_direc
+    # Pad with context and normalization area separately, 'tracking' only need context padding
+    cur_req_region_id = req_region_id_start
+    cur_merged_region_id = merged_region_id_start
+    req_new_regions_dict = {}
+    merged_new_regions_dict = OrderedDict()
+    merged_new_regions_contain_dict = {}
+    context_padded_regions_direc = f'{video_result_name}-context_regions'
+    blank_padded_regions_direc = f'{video_result_name}-blank_regions'
+    if track_region:
+        os.makedirs(context_padded_regions_direc, exist_ok=True)
+        for fname in os.listdir(context_padded_regions_direc):
+            if 'png' in fname:
+                os.remove(os.path.join(context_padded_regions_direc, fname))
+    os.makedirs(blank_padded_regions_direc, exist_ok=True)
+    for fname in os.listdir(blank_padded_regions_direc):
+        if 'png' in fname:
+            os.remove(os.path.join(blank_padded_regions_direc, fname))
+    src_image_w = None
+    src_image_h = None
+
+    # Enumerate req_regions in each frame
+    for fid, original_regions_list in req_regions_result.regions_dict.items():
+        new_regions_list = []
+        # Pad the original req_regions with context
+        for original_region_item in original_regions_list:
+            context_whole_w, context_whole_h = \
+                judge_padding_value(original_region_item, context_padding_type, context_val)
+            new_region_item = pad_single_req_region_context(original_region_item, cur_req_region_id, \
+                context_whole_w, context_whole_h)
+            new_regions_list.append(new_region_item)
+            req_new_regions_dict[cur_req_region_id] = new_region_item
+            cur_req_region_id += 1
+        # Merge small new regions into large new region
+        merged_new_regions_list, frame_merged_region_contain_dict = \
+            merge_one_frame_regions(new_regions_list, cur_merged_region_id, merge_iou)
+        # Read context-padded merged region and save it
+        fname = f'{str(fid).zfill(10)}.png'
+        encoded_image_path = os.path.join(merged_images_direc, fname)
+        encoded_image = cv.imread(encoded_image_path)
+        encoded_image = cv.cvtColor(encoded_image, cv.COLOR_BGR2RGB)
+        
+        if not src_image_w:
+            src_image_w = encoded_image.shape[1]
+            src_image_h = encoded_image.shape[0]
+        assert(src_image_w == encoded_image.shape[1] and src_image_h == encoded_image.shape[0])
+
+        # Crop out the merged large region (with context)
+        if track_region:
+            for merged_new_region in merged_new_regions_list:
+                crop_out_context_region(encoded_image, merged_new_region, src_image_w, src_image_h, \
+                    context_padded_regions_direc)
+                    
+        # Crop out the merged large region and pad with normalization area
+        for merged_new_region in merged_new_regions_list:
+            blank_whole_w, blank_whole_h = judge_padding_value(merged_new_region.original_region, \
+                blank_padding_type, blank_val)
+            merged_new_region = crop_out_blank_region(encoded_image, merged_new_region, src_image_w, src_image_h, \
+                blank_whole_w, blank_whole_h, blank_padded_regions_direc)
+            if merged_new_region:
+                merged_new_regions_dict[merged_new_region.region_id] = merged_new_region
+
+        # update results
+        merged_new_regions_contain_dict.update(frame_merged_region_contain_dict)
+        cur_merged_region_id += len(merged_new_regions_list)
+
+    # Recover req_regions xywh, because we no longer need context-padded req_region
+    for req_region_id in req_new_regions_dict.keys():
+        req_ori_region = req_new_regions_dict[req_region_id].original_region
+        req_new_regions_dict[req_region_id].x = req_ori_region.x
+        req_new_regions_dict[req_region_id].y = req_ori_region.y
+        req_new_regions_dict[req_region_id].w = req_ori_region.w
+        req_new_regions_dict[req_region_id].h = req_ori_region.h
+
+    return req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict, \
+        context_padded_regions_direc, blank_padded_regions_direc, src_image_w, src_image_h
 

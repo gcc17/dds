@@ -51,18 +51,20 @@ def greater_than_target(target_val, cur_val, choose_metric='max'):
 
 def draw_region_rectangle(image_direc, fnames, regions_dict, save_image_direc,
         rec_color=(255, 0, 0), rec_side_width=2, anno_text=None, display_result=False,
-        text_loc=(50,500), font_scale=0.75, thickness=1):
+        text_loc=(50,500), font_scale=0.75, thickness=1, drop_no_rect=False, clean_save=True):
     os.makedirs(save_image_direc, exist_ok=True)
-    for fname in os.listdir(save_image_direc):
-        if "png" not in fname:
-            continue
-        else:
-            os.remove(os.path.join(save_image_direc, fname))
+    if clean_save:
+        for fname in os.listdir(save_image_direc):
+            if "png" in fname:
+                os.remove(os.path.join(save_image_direc, fname))
             
     for fname in fnames:
         if "png" not in fname:
             continue
         fid = int(fname.split(".")[0])
+        if drop_no_rect and ( (fid not in regions_dict.keys()) or (not regions_dict[fid])) :
+            continue
+
         image_path = os.path.join(image_direc, fname)
         if not os.path.exists(image_path):
             continue
@@ -256,6 +258,7 @@ def merge_small_regions(single_result_frame, merged_region_id, index_to_merge):
     merged_new_regions_list = []
     merged_region_contain_dict = {}
     cur_merged_region_id = merged_region_id
+    is_new = False
         
     for i in index_to_merge:
         i2np = np.array([j for j in i])
@@ -269,6 +272,7 @@ def merge_small_regions(single_result_frame, merged_region_id, index_to_merge):
         # merge small PadShiftRegion into a large Region
         if isinstance(left, PadShiftRegion):
             fid = left.original_region.fid
+            is_new = True
         else:
             fid = left.fid
         fid, x, y, w, h, conf, label, resolution, origin = (
@@ -277,18 +281,21 @@ def merge_small_regions(single_result_frame, merged_region_id, index_to_merge):
         single_merged_region = Region(fid, x, y, w, h, conf,
                                       label, resolution, origin)
         
-        # transform this merged region into a PadShiftRegion object
-        merged_new_region = PadShiftRegion(single_merged_region, cur_merged_region_id, x, y, w, h)
-        merged_new_regions_list.append(merged_new_region)
-        # store small region_ids in merged large region
-        contain_small_region_ids = []
-        for j in i:
-            small_region_id = single_result_frame[j].region_id
-            if small_region_id not in contain_small_region_ids:
-                contain_small_region_ids.append(small_region_id)
-        merged_region_contain_dict[cur_merged_region_id] = contain_small_region_ids
-        cur_merged_region_id += 1
-
+        if is_new:
+            # transform this merged region into a PadShiftRegion object
+            merged_new_region = PadShiftRegion(single_merged_region, cur_merged_region_id, x, y, w, h)
+            merged_new_regions_list.append(merged_new_region)
+            # store small region_ids in merged large region
+            contain_small_region_ids = []
+            for j in i:
+                small_region_id = single_result_frame[j].region_id
+                if small_region_id not in contain_small_region_ids:
+                    contain_small_region_ids.append(small_region_id)
+            merged_region_contain_dict[cur_merged_region_id] = contain_small_region_ids
+            cur_merged_region_id += 1
+        else:
+            merged_new_regions_list.append(single_merged_region)
+    
     return merged_new_regions_list, merged_region_contain_dict
 
 
@@ -443,7 +450,7 @@ def enumerate_files(file_direc):
             fnames.append(fname)
         if 'high_phase_results' in fname:
             fnames.append(fname)
-        if 'mpeg_1.0' in fname:
+        if 'mpeg' in fname:
             fnames.append(fname)
 
     return fnames
@@ -460,7 +467,7 @@ def get_gt_file(file_direc, dds_as_gt):
 
 def get_low_file(file_direc):
     for fname in os.listdir(file_direc):
-        if 'mpeg_1.0_36' in fname:
+        if 'mpeg' in fname and '36' in fname:
             return fname
 
 def fname_2_methodname(fname):
@@ -496,10 +503,10 @@ def new_evaluate_all(file_direc, video_name=None, dds_as_gt=False, stats_metric=
     fnames = enumerate_files(file_direc)
     gt_fname = get_gt_file(file_direc, dds_as_gt)
     total_gt_dict = read_results_dict(os.path.join(file_direc, gt_fname))
-    print(gt_fname)
+    print(f'gt_fname: {gt_fname}')
     low_fname = get_low_file(file_direc)
     low_result_dict = read_results_dict(os.path.join(file_direc, low_fname))
-    print(low_fname)
+    print(f'low_fname: {low_fname}')
     if dds_as_gt:
         new_gt_dict = get_new_gt(total_gt_dict, low_result_dict, iou_thresh, \
             pack_confid_thresh, pack_max_area_thresh, pack_confid_thresh, pack_max_area_thresh)
@@ -665,6 +672,52 @@ def filter_bad_parameters_wrapper(server_result_direc, all_target_videos, costs_
     print(left_methods)
 
 
+def merge_images_by_frame(req_regions_dict, high_image_direc, low_image_direc, save_image_direc):
+    os.makedirs(save_image_direc, exist_ok=True)
+    for fid in req_regions_dict.keys():
+        fname = f'{str(fid).zfill(10)}.png'
+        # Read high resolution image
+        high_image = cv.imread(os.path.join(high_image_direc, fname))
+        width = high_image.shape[1]
+        height = high_image.shape[0]
+        # Read low resolution image
+        low_image = cv.imread(os.path.join(low_image_direc, fname))
+        # Enlarge low resolution image
+        enlarged_image = cv.resize(low_image, (width, height), fx=0, fy=0,
+                                   interpolation=cv.INTER_CUBIC)
+        # Put regions in place
+        for r in req_regions_dict[fid]:
+            if fid != r.fid:
+                continue
+            x0 = int(r.x * width)
+            y0 = int(r.y * height)
+            x1 = int((r.w * width) + x0 - 1)
+            y1 = int((r.h * height) + y0 - 1)
+
+            enlarged_image[y0:y1, x0:x1, :] = high_image[y0:y1, x0:x1, :]
+        cv.imwrite(os.path.join(save_image_direc, fname), enlarged_image,
+                   [cv.IMWRITE_PNG_COMPRESSION, 0])
 
 
+def track2req_region(track_new_regions_dict, req_regions_dict):
+    fid_list = []
+    for track_new_region in track_new_regions_dict.values():
+        if track_new_region.original_region.fid not in fid_list:
+            fid_list.append(track_new_region.original_region.fid)
+    
+    new_req_regions_dict = {}
+    for req_fid in fid_list:
+        new_req_regions_dict[req_fid] = req_regions_dict[req_fid]
+    
+    return new_req_regions_dict, fid_list
+
+
+def exclude_frame_regions(merged_new_regions_dict, fid_list):
+    exclude_new_regions_dict = {}
+    for merged_region_id, merged_new_region in merged_new_regions_dict.items():
+        if merged_new_region.original_region.fid in fid_list:
+            continue
+        exclude_new_regions_dict[merged_region_id] = merged_new_region
+    
+    return exclude_new_regions_dict
 

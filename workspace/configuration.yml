@@ -14,7 +14,7 @@ default:
   # overwrite existing results or not
   overwrite: False
   # the video name you want to run
-  video_name: trafficcam_3
+  video_name: trafficcam_1
   # several configurations for object detection
   max_object_size: 0.3
   low_threshold: 0.3
@@ -22,7 +22,7 @@ default:
   enforce_iframes: True
   verbosity: info
   simulate: False
-  intersection_threshold: 0.3
+  intersection_threshold: 1.0
   low_results_path: None
   high_results_path: None
   high_resolution: -1
@@ -35,7 +35,7 @@ default:
   min_object_size: 0
   boundary: 0.2
   tracking_threshold: 0.3
-  suppression_threshold: 0.5
+  suppression_threshold: 0.3
   rpn_enlarge_ratio: 0
    # The score to prune out those low-objectness-score regions. Just to control the bandwidth
   prune_score: 0.5
@@ -74,22 +74,22 @@ instances:
   low_qp:
   - 36
   - 26
-  low_resolution: 1.0
+  low_resolution: 0.8
 - batch_size: 15
   # the configuration for the Stream A (low) and Stream B (high)
   high_qp: 26
-  high_resolution: 1.0
+  high_resolution: 0.8
   low_qp: 36
-  low_resolution: 1.0
+  low_resolution: 0.8
   method: dds
   # Deprecated parameter
   rpn_enlarge_ratio: 0.0
 
 # the configuration for the streamB pack: region-region
 - high_qp: 26
-  high_resolution: 1.0
+  high_resolution: 0.8
   low_qp: 36
-  low_resolution: 1.0
+  low_resolution: 0.8
   method: streamBpack
   # Deprecated parameter
   rpn_enlarge_ratio: 0.0
@@ -105,451 +105,35 @@ instances:
     - 0.0
     - 0.3
     - 0.5
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
+  intersect_iou: 0.0
   merge_iou: 
     - 1.0
     - 0.0
   compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: region-inverse
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: region
-  context_val:
-    - 0.0
-    - 0.3
-    - 0.5
-    - 1.0
-  blank_padding_type: inverse
-  blank_val:
-    - 0.0005
-    - 0.0001
-    - 0.001
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: region-whole
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: region
-  context_val:
-    - 0.0
-    - 0.3
-    - 0.5
-    - 1.0
-  blank_padding_type: whole
-  blank_val:
-    - 0.01
-    - 0.03
-    - 0.05
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: inverse-region
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: inverse
-  context_val:
-    - 0.0005
-    - 0.0003
-    - 0.0001
-    - 0.001
-  blank_padding_type: region
-  blank_val:
-    - 0.0
-    - 0.3
-    - 0.5
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: inverse-inverse
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: inverse
-  context_val:
-    - 0.0005
-    - 0.0003
-    - 0.0001
-    - 0.001
-  blank_padding_type: inverse
-  blank_val:
-    - 0.0005
-    - 0.0001
-    - 0.001
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: inverse-whole
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: inverse
-  context_val:
-    - 0.0005
-    - 0.0003
-    - 0.0001
-    - 0.001
-  blank_padding_type: whole
-  blank_val:
-    - 0.01
-    - 0.03
-    - 0.05
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou:
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-- # the configuration for the streamB pack: whole-region
-  high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: whole
-  context_val:
-    - 0.01
-    - 0.03
-    - 0.05
-    - 0.07
-  blank_padding_type: region
-  blank_val:
-    - 0.0
-    - 0.3
-    - 0.5
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: whole-inverse
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: whole
-  context_val:
-    - 0.01
-    - 0.03
-    - 0.05
-    - 0.07
-  blank_padding_type: inverse
-  blank_val:
-    - 0.0005
-    - 0.0001
-    - 0.001
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: whole-whole
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: whole
-  context_val:
-    - 0.01
-    - 0.03
-    - 0.05
-    - 0.07
-  blank_padding_type: whole
-  blank_val:
-    - 0.01
-    - 0.03
-    - 0.05
-  area_upper_bound:
-    - 0.0005
-    - 0.001
-  resize_type:  
-    - fixed_ratio
-  fixed_area: 
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou:
-    - 1.0
-    - 0.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: pixel-region     
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: pixel
-  context_val:
-    - 0.0027
-    - 0.01
-    - 0.038
-    - 0.054
-  blank_padding_type: region
-  blank_val:
-    - 0.0
-    - 0.3
-    - 0.5
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 0.0
-    - 1.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: pixel-inverse
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: pixel
-  context_val:
-    - 0.0027
-    - 0.01
-    - 0.038
-    - 0.054
-  blank_padding_type: inverse
-  blank_val:
-    - 0.0005
-    - 0.0001
-    - 0.001
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou: 
-    - 0.0
-    - 1.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
-# the configuration for the streamB pack: pixel-whole  
-- high_qp: 26
-  high_resolution: 1.0
-  low_qp: 36
-  low_resolution: 1.0
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: pixel
-  context_val:
-    - 0.0027
-    - 0.01
-    - 0.038
-    - 0.054
-  blank_padding_type: whole
-  blank_val:
-    - 0.01
-    - 0.03
-    - 0.05
-  area_upper_bound: 
-    - 0.0005
-    - 0.001
-  resize_type: 
-    - fixed_ratio
-  fixed_area:
-    - 0.001
-    - 0.002
-  fixed_ratio:
-    - 1
-    - 2
-  intersect_iou: 0.2
-  merge_iou:
-    - 0.0
-    - 1.0
-  compare_gt: False
-  cleanup: True
-  track_region: False
-
+  cleanup: False
+  track_region: 
+    - False
+    - True
+  max_diff: 
+    - 0.10
+    - 0.20
+  max_frame_interval:
+    - 3
+    - 5
+    - 10
+  qp_dict:
+    # - qp_list:
+    #   - 16
+    #   - 24
+    #   - 26
+    - qp_list:
+      - 26
+    # - qp_list:
+    #   - 16
+  percent_dict:
+    - percent_list:
+      - 50
+      - 75
+      - 100
+    - percent_list:
+      - 100
