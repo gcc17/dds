@@ -29,8 +29,8 @@ def pack_merged_regions_as_image(merged_new_regions_dict, \
         packer.add_rect(
             width=abs_total_w, height=abs_total_h, rid=cur_merged_new_region.region_id
         )
-        print(f'({cur_merged_new_region.original_region.fid},{cur_merged_new_region.w},{cur_merged_new_region.h},'
-        f'{abs_total_w},{abs_total_h})')
+        # print(f'({cur_merged_new_region.original_region.fid},{cur_merged_new_region.w},{cur_merged_new_region.h},'
+        # f'{abs_total_w},{abs_total_h})')
     
     print('before packing')
     packer.pack()
@@ -90,3 +90,121 @@ def pack_merged_regions_as_image(merged_new_regions_dict, \
     shutil.rmtree(tmp_regions_direc) 
     
     return merged_regions_maps
+
+
+def pack_filtered_padded_regions(
+        req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict, 
+        shift_images_direc, padded_regions_direc, src_image_w, src_image_h, start_bid=0, 
+        merged_images_direc=None,
+    ):
+    
+     # Create directory for saving shift_images
+    os.makedirs(shift_images_direc, exist_ok=True)
+    for fname in os.listdir(shift_images_direc):
+        if 'png' in fname:
+            os.remove(os.path.join(shift_images_direc, fname))
+    npy_direc = 'npy_files'
+    os.makedirs(npy_direc, exist_ok=True)
+    shutil.rmtree(npy_direc)
+    os.makedirs(npy_direc, exist_ok=True)
+    # Create packer of rectpack
+    # packer = newPacker(pack_algo=GuillotineBssfSas, rotation=False)
+    packer = newPacker(rotation=False)
+    packer.add_bin(width=src_image_w, height=src_image_h, count=float("inf"))
+
+    # add context_blank-padded merged region into to the packer
+    for cur_merged_region_id, cur_merged_new_region in merged_new_regions_dict.items():
+        abs_total_w = int(cur_merged_new_region.w * src_image_w)
+        abs_total_h = int(cur_merged_new_region.h * src_image_h)
+        packer.add_rect(
+            width=abs_total_w, height=abs_total_h, rid=cur_merged_new_region.region_id
+        )
+        print(f'({abs_total_w}, {abs_total_h})')
+    
+    print('before packing')
+    packer.pack()
+    all_rects = packer.rect_list()
+    shift_images = {}
+    merged_regions_maps = {}
+    print('after packing')
+    
+    # after running rectpack, find out these rectangles
+    for rect in all_rects:
+        b, x, y, w, h, rid = rect
+        print(x,y,w,h)
+        b += start_bid
+        if b not in shift_images.keys():
+            shift_images[b] = np.zeros((src_image_h, src_image_w, 3), dtype=np.uint8)
+            merged_regions_maps[b] = np.zeros((src_image_h, src_image_w), dtype=int)
+            merged_regions_maps[b][:,:] = -1
+            # set the whole image as 'blank'
+            # shift_images[b] = normalize_image(shift_images[b])
+        
+        if rid not in merged_new_regions_dict.keys():
+            exit()
+        cur_merged_new_region = merged_new_regions_dict[rid]
+        # get shift amount: new_location - old_location
+        shift_x = x/src_image_w - cur_merged_new_region.blank_x
+        shift_y = y/src_image_h - cur_merged_new_region.blank_y
+        merged_new_regions_dict[rid].x = x/src_image_w
+        merged_new_regions_dict[rid].y = y/src_image_h
+        
+        # read region content from file
+        full_pad_region_path = os.path.join(padded_regions_direc, f"region-{rid}.png")
+        region_content = cv.imread(full_pad_region_path)
+        region_content = cv.cvtColor(region_content, cv.COLOR_BGR2RGB)
+        # set region_content in shift_images
+        shift_images[b][y:y+h, x:x+w, :] = region_content
+
+        # set merged_regions_maps, used when restoring detection results back to original image
+        # this map is only used to find regions that overlap with the detection box
+        # box calculate IoU with small new region
+        merged_regions_maps[b][y:y+h, x:x+w] = rid
+        
+        last_image = None
+        last_fid = -1
+        # shift small new regions inside this merged new region
+        for cur_req_new_region_id in merged_new_regions_contain_dict[rid]:
+            cur_req_new_region = req_new_regions_dict[cur_req_new_region_id]
+            cur_req_new_region.x += shift_x
+            cur_req_new_region.y += shift_y
+            req_new_regions_dict[cur_req_new_region_id] = cur_req_new_region
+
+            if merged_images_direc:
+
+                ori_x0 = int(cur_req_new_region.original_region.x * src_image_w)
+                ori_y0 = int(cur_req_new_region.original_region.y * src_image_h)
+                ori_x1 = int(cur_req_new_region.original_region.w * src_image_w) + ori_x0
+                ori_y1 = int(cur_req_new_region.original_region.h * src_image_h) + ori_y0
+                new_x0 = int(cur_req_new_region.x * src_image_w)
+                new_y0 = int(cur_req_new_region.y * src_image_h)
+                new_x1 = int(cur_req_new_region.w * src_image_w) + new_x0
+                new_y1 = int(cur_req_new_region.h * src_image_h) + new_y0
+                cur_fid = cur_req_new_region.original_region.fid
+                if len(merged_new_regions_contain_dict[rid]) > 1:
+                    exit()
+                npy_name = (f'{cur_fid}_{x}_{x+w}_'
+                            f'{y}_{y+h}_{ori_x0}_{ori_x1}_{ori_y0}_{ori_y1}')
+                fname = f"{str(cur_fid).zfill(10)}.png"
+                # if last_fid == cur_fid:
+                #     region_image = last_image
+                # else:
+                #     region_image = cv.imread(os.path.join(merged_images_direc, fname))
+                #     last_fid = cur_fid
+                #     last_image = region_image
+                # npy_data = region_image[ori_y0:ori_y1, ori_x0:ori_x1, :]
+                
+                npy_data = cv.cvtColor(region_content, cv.COLOR_RGB2BGR)
+                np.save(os.path.join(npy_direc, f'{npy_name}.npy'), npy_data)
+    
+    # save shift_images
+    for bid, shift_image in shift_images.items():
+        shift_image_path = os.path.join(shift_images_direc, f"{str(bid).zfill(10)}.png")
+        shift_image = cv.cvtColor(shift_image, cv.COLOR_RGB2BGR)
+        cv.imwrite(shift_image_path, shift_image, [cv.IMWRITE_PNG_COMPRESSION, 0])
+    
+    # cleanup temporary region images
+    shutil.rmtree(padded_regions_direc) 
+    
+    return merged_regions_maps
+

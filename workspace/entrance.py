@@ -140,27 +140,13 @@ def execute_single(single_instance):
         blank_val = single_instance['blank_val']
         intersect_iou = single_instance['intersect_iou']
         merge_iou = single_instance['merge_iou']
-        track_region = single_instance['track_region']
-        if not track_region:
-            max_diff = 0.0
-            max_frame_interval = 0
-        else:
-            max_diff = single_instance['max_diff']
-            max_frame_interval = single_instance['max_frame_interval']
-        percent_list = single_instance['percent_dict']['percent_list']
-        qp_list = single_instance['qp_dict']['qp_list']
-        if len(qp_list) != len(percent_list):
-            print('qp and percent list do not match')
-            return
-        single_instance['percent_list'] = percent_list
-        single_instance['qp_list'] = qp_list
-
+        resize_method = single_instance['resize_method']
+        filter_method = single_instance['filter_method']
         # skip if result file already exists
         # You could customize the way to serialize the parameters into filename by yourself
         result_file_name = (f'{video_name}_streamBpack_{context_padding_type}_{context_val}_'
                             f'{blank_padding_type}_{blank_val}_inter_{intersect_iou}_merge_{merge_iou}_'
-                            f'track_{track_region}_diff_{max_diff}_frameinter_{max_frame_interval}_'
-                            f'{qp_list}_{percent_list}')
+                            f'{resize_method}_filter_{filter_method}')
         if single_instance['overwrite'] == False and \
             os.path.exists(os.path.join(result_direc, f'{result_file_name}-pack-txt')):
             print(f"Skipping {result_file_name}")

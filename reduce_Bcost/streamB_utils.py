@@ -289,8 +289,7 @@ def merge_small_regions(single_result_frame, merged_region_id, index_to_merge):
             contain_small_region_ids = []
             for j in i:
                 small_region_id = single_result_frame[j].region_id
-                if small_region_id not in contain_small_region_ids:
-                    contain_small_region_ids.append(small_region_id)
+                contain_small_region_ids.append(small_region_id)
             merged_region_contain_dict[cur_merged_region_id] = contain_small_region_ids
             cur_merged_region_id += 1
         else:

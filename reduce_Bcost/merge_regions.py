@@ -88,7 +88,6 @@ def merge_low_encode_images(base_images_direc, encode_images_direc, percent_list
         # print(len(cur_req_regions_result.regions_dict), cur_req_regions_result.regions_dict.keys())
         cur_region_images_direc = f'{encode_images_direc}-{idx}-cropped'
         last_region_images_direc = f'{encode_images_direc}-{idx+1}-cropped'
-        
         import ipdb; ipdb.set_trace()
         if idx == len(percent_list)-1:
             merge_images(cur_region_images_direc, base_images_direc, cur_req_regions_result)
@@ -155,3 +154,17 @@ def encode_regions(server, logger, req_regions_result, percent_list, qp_list, ba
     
     return total_size
 
+
+def encode_batch_filtered_regions(
+        logger, batch_req_regions_result, qp, high_resolution, 
+        high_images_path, low_images_direc, merged_images_direc, enforce_iframes
+    ):
+
+    high_batch_video_size, high_batch_pixel_size = encode_regions_images(
+        batch_req_regions_result, high_images_path, high_resolution, \
+        qp, merged_images_direc, enforce_iframes, True
+    )
+    logger.info(f"Sent {high_batch_video_size / 1024} in high phase")
+    merge_images(f'{merged_images_direc}-cropped', low_images_direc, batch_req_regions_result)
+
+    return high_batch_video_size, high_batch_pixel_size

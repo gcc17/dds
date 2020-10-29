@@ -177,7 +177,6 @@ class Server:
         for img in fnames:
             shutil.copy(os.path.join(images_direc, img), merged_images_direc)
 
-        import ipdb; ipdb.set_trace()
         merged_images = merge_images(
             merged_images_direc, low_images_direc, req_regions)
         infer_start = timeit.default_timer()

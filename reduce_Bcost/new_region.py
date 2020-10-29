@@ -45,6 +45,8 @@ class PadShiftRegion:
         self.fy = fy
         self.shift_x = shift_x
         self.shift_y = shift_y
+        self.blank_x = -1
+        self.blank_y = -1
     
     def write_new_region_txt(self, fname):
         with open(fname, 'a') as f:

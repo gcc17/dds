@@ -7,7 +7,7 @@ from frontend.client import Client
 from dds_utils import (ServerConfig, read_results_dict, Results, merge_boxes_in_results,
                        evaluate, write_stats)
 from reduce_Bcost.streamB_infer import (analyze_merge_regions, analyze_combined_methods,
-                        analyze_encoded_regions)
+                        analyze_encoded_regions, analyze_dds_filtered)
 from reduce_Bcost.streamB_utils import (draw_region_rectangle, prepare_high_low_images)
 import ipdb
 import shutil
@@ -52,12 +52,11 @@ def main(args):
             for region_item in region_list:
                 mpeg_regions_result.append(region_item)
 
-        results, bw = analyze_encoded_regions(
-            server, args.video_name, req_regions_result, mpeg_regions_result, 
-            args.percent_list, args.qp_list,
+        results, bw = analyze_dds_filtered(
+            server, args.video_name, req_regions_result, mpeg_regions_result,  
             args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
-            cleanup=args.cleanup, out_cost_file=args.out_cost_file, intersect_iou=args.intersect_iou,
-            merge_iou=args.merge_iou
+            resize_method=args.resize_method, cleanup=args.cleanup, out_cost_file=args.out_cost_file, 
+            intersect_iou=args.intersect_iou, merge_iou=args.merge_iou, filter_by_dds=args.filter_method
         )
                 
     elif args.simulate:
@@ -79,7 +78,6 @@ def main(args):
             args.estimate_banwidth, args.debug_mode)
     elif not args.simulate and not args.hname and args.high_resolution != -1:
         mode = "emulation"
-        # ipdb.set_trace()
         logger.warning(f"Running DDS in EMULATION mode on {args.video_name}")
         server = Server(config)
 
@@ -92,7 +90,6 @@ def main(args):
             out_cost_file=args.out_cost_file)
     elif not args.simulate and not args.hname:
         mode = "mpeg"
-        # ipdb.set_trace()
         logger.warning(f"Running in MPEG mode with resolution "
                        f"{args.low_resolution} on {args.video_name}")
         server = Server(config)
@@ -104,7 +101,6 @@ def main(args):
             out_cost_file=args.out_cost_file)
     elif not args.simulate and args.hname:
         mode = "implementation"
-        # ipdb.set_trace()
         logger.warning(
             f"Running DDS using a server client implementation with "
             f"server running on {args.hname} using video {args.hname}")

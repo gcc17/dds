@@ -674,8 +674,8 @@ def merge_images(cropped_images_direc, low_images_direc, req_regions):
                 continue
             x0 = int(r.x * width)
             y0 = int(r.y * height)
-            x1 = int((r.w * width) + x0 - 1)
-            y1 = int((r.h * height) + y0 - 1)
+            x1 = int((r.w * width) + x0)
+            y1 = int((r.h * height) + y0)
 
             enlarged_image[y0:y1, x0:x1, :] = high_image[y0:y1, x0:x1, :]
         cv.imwrite(os.path.join(cropped_images_direc, fname), enlarged_image,

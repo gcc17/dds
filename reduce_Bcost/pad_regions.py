@@ -380,3 +380,179 @@ def pad_encoded_regions(req_regions_result, video_result_name, merged_images_dir
     return req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict, \
         context_padded_regions_direc, blank_padded_regions_direc, src_image_w, src_image_h
 
+
+def pad_filtered_regions_context(
+        req_regions_result, context_padding_type, context_val, merge_iou=0.0
+    ):
+
+    # Pad filtered req_regions with context
+    cur_req_region_id = 0
+    cur_merged_region_id = 0
+    req_new_regions_dict = {}
+    merged_new_regions_dict = OrderedDict()
+    merged_new_regions_contain_dict = {}
+
+    # Enumerate req_regions in each frame
+    for fid, original_regions_list in req_regions_result.regions_dict.items():
+        new_regions_list = []
+        # Pad the original req_regions with context
+        for original_region_item in original_regions_list:
+            context_whole_w, context_whole_h = \
+                judge_padding_value(original_region_item, context_padding_type, context_val)
+            new_region_item = pad_single_req_region_context(
+                original_region_item, cur_req_region_id, context_whole_w, context_whole_h)
+            new_regions_list.append(new_region_item)
+            req_new_regions_dict[cur_req_region_id] = new_region_item
+            cur_req_region_id += 1
+        # Merge small new regions into large new region
+        merged_new_regions_list, frame_merged_region_contain_dict = \
+            merge_one_frame_regions(new_regions_list, cur_merged_region_id, merge_iou)
+        
+        # Update merged regions dict and contain_dict
+        for merged_new_region in merged_new_regions_list:
+            merged_new_regions_dict[merged_new_region.region_id] = merged_new_region
+        merged_new_regions_contain_dict.update(frame_merged_region_contain_dict)
+        cur_merged_region_id += len(merged_new_regions_list)
+
+    # Recover req_regions xywh, because we no longer need context-padded req_region
+    for req_region_id in req_new_regions_dict.keys():
+        req_ori_region = req_new_regions_dict[req_region_id].original_region
+        req_new_regions_dict[req_region_id].x = req_ori_region.x
+        req_new_regions_dict[req_region_id].y = req_ori_region.y
+        req_new_regions_dict[req_region_id].w = req_ori_region.w
+        req_new_regions_dict[req_region_id].h = req_ori_region.h
+
+    return req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict
+
+
+def save_padded_region(
+        src_image, merged_new_region, blank_padding_type, blank_val, padded_regions_direc, 
+        src_image_w, src_image_h
+    ):
+
+    # Crop out the blank-padded region and save it
+    blank_whole_w, blank_whole_h = judge_padding_value(merged_new_region, \
+        blank_padding_type, blank_val)
+    
+    abs_context_x = int(merged_new_region.original_region.x * src_image_w)
+    abs_context_y = int(merged_new_region.original_region.y * src_image_h)
+    abs_ori_context_w = int(merged_new_region.original_region.w * src_image_w)
+    abs_ori_context_h = int(merged_new_region.original_region.h * src_image_h)
+    abs_context_w = int(merged_new_region.w * src_image_w)
+    abs_context_h = int(merged_new_region.h * src_image_h)
+    
+    # Ensure blank-padded region not exceed the original frame size
+    abs_blank_w = min( int(blank_whole_w*src_image_w), (src_image_w-abs_context_w) // 2 )
+    abs_blank_h = min( int(blank_whole_h*src_image_h), (src_image_h-abs_context_h) // 2 )
+    abs_total_w = abs_context_w + 2*abs_blank_w
+    abs_total_h = abs_context_h + 2*abs_blank_h
+
+    # Read context-padded region and resize it
+    context_padded_region = src_image[abs_context_y:abs_context_y+abs_context_h, \
+        abs_context_x:abs_context_x+abs_context_w, :]
+    context_padded_region = cv.resize(context_padded_region, (abs_context_w, abs_context_h), 
+                                    interpolation=cv.INTER_CUBIC)
+    
+    # Set the blank-padded region background as normalization value
+    blank_padded_region = np.zeros((abs_total_h, abs_total_w, 3), dtype=np.uint8)
+    blank_padded_region = normalize_image(blank_padded_region)
+    blank_padded_region[abs_blank_h:abs_blank_h+abs_context_h, abs_blank_w:abs_blank_w+abs_context_w, :] = \
+        context_padded_region
+
+    # Save region content
+    blank_padded_region = cv.cvtColor(blank_padded_region, cv.COLOR_RGB2BGR)
+    blank_padded_region_path = os.path.join(
+        padded_regions_direc, f'region-{merged_new_region.region_id}.png'
+    )
+    cv.imwrite(blank_padded_region_path, blank_padded_region, [cv.IMWRITE_PNG_COMPRESSION, 0])
+
+    # Change merged_new_region w,h after blank padding: shifting needs whole size
+    merged_new_region.w = merged_new_region.original_region.w + 2*abs_blank_w / src_image_w
+    merged_new_region.h = merged_new_region.original_region.h + 2*abs_blank_h / src_image_h
+    merged_new_region.blank_x = merged_new_region.original_region.x - abs_blank_w / src_image_w
+    merged_new_region.blank_y = merged_new_region.original_region.y - abs_blank_h / src_image_h
+
+    abs_merged_w = int(merged_new_region.w * src_image_w)
+    abs_merged_h = int(merged_new_region.h * src_image_h)
+    if not (abs_merged_w == abs_total_w and abs_merged_h == abs_total_h):
+        merged_new_region.w = (abs_total_w + 0.5) / src_image_w
+        merged_new_region.h = (abs_total_h + 0.5) / src_image_h
+    return merged_new_region
+
+
+def pad_filtered_regions_blank(
+        merged_new_regions_dict, batch_images_direc, merged_images_direc, blank_padding_type, blank_val, 
+        sort_context_region=False
+    ):
+
+    padded_regions_direc = f'{batch_images_direc}-padded_regions'
+    os.makedirs(padded_regions_direc, exist_ok=True)
+    last_image = None
+    last_fid = -1
+    src_image_w = None
+    src_image_h = None
+
+    sorted_merged_new_regions = []
+    if sort_context_region:
+        for merged_new_region_id, merged_new_region in merged_new_regions_dict.items():
+            insert_loc = 0
+            for sorted_region_id in sorted_merged_new_regions:
+                sorted_new_region = merged_new_regions_dict[sorted_region_id]
+                if merged_new_region.original_region.fid < sorted_new_region.original_region.fid:
+                    break
+                if merged_new_region.original_region.fid > sorted_new_region.original_region.fid:
+                    insert_loc += 1
+                    continue
+                if merged_new_region.x < sorted_new_region.x:
+                    break
+                if merged_new_region.x > sorted_new_region.x:
+                    insert_loc += 1
+                    continue
+                if merged_new_region.y < sorted_new_region.y:
+                    break
+                if merged_new_region.y > sorted_new_region.y:
+                    insert_loc += 1
+                    continue
+                if merged_new_region.w < sorted_new_region.w:
+                    break
+                if merged_new_region.w > sorted_new_region.w:
+                    insert_loc += 1
+                    continue
+                if merged_new_region.h < sorted_new_region.h:
+                    break
+                if merged_new_region.h > sorted_new_region.h:
+                    insert_loc += 1
+                    continue
+            sorted_merged_new_regions.insert(insert_loc, merged_new_region_id)
+        sorted_merged_new_regions_dict = OrderedDict()
+        for merged_region_id in sorted_merged_new_regions:
+            merged_new_region = merged_new_regions_dict[merged_region_id]
+            sorted_merged_new_regions_dict[merged_region_id] = merged_new_region
+            print(merged_new_region.original_region.fid, merged_new_region.x, merged_new_region.y, \
+                merged_new_region.w, merged_new_region.h)
+        merged_new_regions_dict = sorted_merged_new_regions_dict
+
+    for merged_new_region_id in merged_new_regions_dict.keys():
+        merged_new_region = merged_new_regions_dict[merged_new_region_id]
+        if last_fid == merged_new_region.original_region.fid:
+            cur_image = last_image
+        else:
+            cur_fname = f'{str(merged_new_region.original_region.fid).zfill(10)}.png'
+            cur_image_path = os.path.join(merged_images_direc, cur_fname)
+            cur_image = cv.imread(cur_image_path)
+            cur_image = cv.cvtColor(cur_image, cv.COLOR_BGR2RGB)
+            last_image = cur_image
+            last_fid = merged_new_region.original_region.fid
+        if src_image_w is None:
+            src_image_w = cur_image.shape[1]
+            src_image_h = cur_image.shape[0]
+        if not (src_image_w == cur_image.shape[1] and src_image_h == cur_image.shape[0]):
+            print('Image shape does not match!')
+            exit()
+        
+        merged_new_regions_dict[merged_new_region_id] = save_padded_region(
+            cur_image, merged_new_region, blank_padding_type, blank_val, padded_regions_direc, 
+            src_image_w, src_image_h
+        )
+
+    return padded_regions_direc, src_image_w, src_image_h, merged_new_regions_dict

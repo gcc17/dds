@@ -34,7 +34,7 @@ def compare_two_image_diff(image1_path=None, image2_path=None, image1=None, imag
     if template_method in [cv.TM_SQDIFF, cv.TM_SQDIFF_NORMED]:
         img_match_val = min_val
         # match_loc[0]: w, match_loc[1]: h
-        img_match_loc = min_val
+        img_match_loc = min_loc
     else:
         img_match_val = max_val
         img_match_loc = max_loc
