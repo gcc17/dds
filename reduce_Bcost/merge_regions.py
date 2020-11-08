@@ -88,7 +88,7 @@ def merge_low_encode_images(base_images_direc, encode_images_direc, percent_list
         # print(len(cur_req_regions_result.regions_dict), cur_req_regions_result.regions_dict.keys())
         cur_region_images_direc = f'{encode_images_direc}-{idx}-cropped'
         last_region_images_direc = f'{encode_images_direc}-{idx+1}-cropped'
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         if idx == len(percent_list)-1:
             merge_images(cur_region_images_direc, base_images_direc, cur_req_regions_result)
         else:

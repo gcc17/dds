@@ -14,8 +14,8 @@ from collections import OrderedDict
 def pad_single_req_region_context(original_region, region_id, context_whole_w, context_whole_h):
     new_x0 = max(0, original_region.x - context_whole_w)
     new_y0 = max(0, original_region.y - context_whole_h)
-    new_x1 = min(1, new_x0 + original_region.w + 2*context_whole_w)
-    new_y1 = min(1, new_y0 + original_region.h + 2*context_whole_h)
+    new_x1 = min(1, original_region.x + original_region.w + context_whole_w)
+    new_y1 = min(1, original_region.y + original_region.h + context_whole_h)
     new_w = new_x1 - new_x0
     new_h = new_y1 - new_y0
     return PadShiftRegion(original_region, region_id, new_x0, new_y0, new_w, new_h)
@@ -431,34 +431,30 @@ def save_padded_region(
     ):
 
     # Crop out the blank-padded region and save it
-    blank_whole_w, blank_whole_h = judge_padding_value(merged_new_region, \
+    blank_whole_w, blank_whole_h = judge_padding_value(merged_new_region.original_region, \
         blank_padding_type, blank_val)
+    new_w = min(1, merged_new_region.w + 2*blank_whole_w)
+    new_h = min(1, merged_new_region.h + 2*blank_whole_h)
+    abs_delta_x = int( (new_w - merged_new_region.w) / 2 * src_image_w )
+    abs_delta_y = int( (new_h - merged_new_region.h) / 2 * src_image_h )
+    abs_new_w = int(src_image_w * new_w)
+    abs_new_h = int(src_image_h * new_h)
+
+    # Set the blank-padded region background as normalization value
+    blank_padded_region = np.zeros((abs_new_h, abs_new_w, 3), dtype=np.uint8)
+    # blank_padded_region = normalize_image(blank_padded_region)
     
     abs_context_x = int(merged_new_region.original_region.x * src_image_w)
     abs_context_y = int(merged_new_region.original_region.y * src_image_h)
-    abs_ori_context_w = int(merged_new_region.original_region.w * src_image_w)
-    abs_ori_context_h = int(merged_new_region.original_region.h * src_image_h)
     abs_context_w = int(merged_new_region.w * src_image_w)
     abs_context_h = int(merged_new_region.h * src_image_h)
-    
-    # Ensure blank-padded region not exceed the original frame size
-    abs_blank_w = min( int(blank_whole_w*src_image_w), (src_image_w-abs_context_w) // 2 )
-    abs_blank_h = min( int(blank_whole_h*src_image_h), (src_image_h-abs_context_h) // 2 )
-    abs_total_w = abs_context_w + 2*abs_blank_w
-    abs_total_h = abs_context_h + 2*abs_blank_h
 
     # Read context-padded region and resize it
     context_padded_region = src_image[abs_context_y:abs_context_y+abs_context_h, \
-        abs_context_x:abs_context_x+abs_context_w, :]
-    context_padded_region = cv.resize(context_padded_region, (abs_context_w, abs_context_h), 
-                                    interpolation=cv.INTER_CUBIC)
-    
-    # Set the blank-padded region background as normalization value
-    blank_padded_region = np.zeros((abs_total_h, abs_total_w, 3), dtype=np.uint8)
-    blank_padded_region = normalize_image(blank_padded_region)
-    blank_padded_region[abs_blank_h:abs_blank_h+abs_context_h, abs_blank_w:abs_blank_w+abs_context_w, :] = \
+        abs_context_x:abs_context_x+abs_context_w, :]    
+    blank_padded_region[abs_delta_y:abs_delta_y+abs_context_h, abs_delta_x:abs_delta_x+abs_context_w, :] = \
         context_padded_region
-
+    
     # Save region content
     blank_padded_region = cv.cvtColor(blank_padded_region, cv.COLOR_RGB2BGR)
     blank_padded_region_path = os.path.join(
@@ -467,17 +463,13 @@ def save_padded_region(
     cv.imwrite(blank_padded_region_path, blank_padded_region, [cv.IMWRITE_PNG_COMPRESSION, 0])
 
     # Change merged_new_region w,h after blank padding: shifting needs whole size
-    merged_new_region.w = merged_new_region.original_region.w + 2*abs_blank_w / src_image_w
-    merged_new_region.h = merged_new_region.original_region.h + 2*abs_blank_h / src_image_h
-    merged_new_region.blank_x = merged_new_region.original_region.x - abs_blank_w / src_image_w
-    merged_new_region.blank_y = merged_new_region.original_region.y - abs_blank_h / src_image_h
+    merged_new_region.blank_x = merged_new_region.original_region.x - (new_w - merged_new_region.w) / 2
+    merged_new_region.blank_y = merged_new_region.original_region.y - (new_h - merged_new_region.h) / 2
+    merged_new_region.w = new_w
+    merged_new_region.h = new_h
 
-    abs_merged_w = int(merged_new_region.w * src_image_w)
-    abs_merged_h = int(merged_new_region.h * src_image_h)
-    if not (abs_merged_w == abs_total_w and abs_merged_h == abs_total_h):
-        merged_new_region.w = (abs_total_w + 0.5) / src_image_w
-        merged_new_region.h = (abs_total_h + 0.5) / src_image_h
     return merged_new_region
+
 
 
 def pad_filtered_regions_blank(
@@ -528,8 +520,8 @@ def pad_filtered_regions_blank(
         for merged_region_id in sorted_merged_new_regions:
             merged_new_region = merged_new_regions_dict[merged_region_id]
             sorted_merged_new_regions_dict[merged_region_id] = merged_new_region
-            print(merged_new_region.original_region.fid, merged_new_region.x, merged_new_region.y, \
-                merged_new_region.w, merged_new_region.h)
+            # print(merged_new_region.original_region.fid, merged_new_region.x, merged_new_region.y, \
+            #     merged_new_region.w, merged_new_region.h)
         merged_new_regions_dict = sorted_merged_new_regions_dict
 
     for merged_new_region_id in merged_new_regions_dict.keys():

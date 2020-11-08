@@ -190,7 +190,8 @@ def two_results_diff(max_fid, regions_dict1, regions_dict2, confid_thresh1, conf
             diff_tmp_direc, anno_text=text1)
         if vis_common == 0:
             draw_region_rectangle(diff_tmp_direc, fnames, t2f1, 
-                diff_image_direc, rec_color=(0,0,255), anno_text=text2, text_loc=(50,550))
+                diff_image_direc, rec_color=(0,0,255), anno_text=text2, text_loc=(50,550), 
+                drop_no_rect=True)
         else:
             diff_tmp_direc2 = os.path.join(src_image_direc, "diff_tmp2")
             draw_region_rectangle(diff_tmp_direc, fnames, t2f1, 

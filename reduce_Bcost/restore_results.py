@@ -153,7 +153,7 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
         rx1 = int(single_pad_shift_result.w * src_image_w) + rx0
         ry1 = int(single_pad_shift_result.h * src_image_h) + ry0
         bid = single_pad_shift_result.fid
-        single_region_map = merged_regions_maps[bid][ry0:ry1, rx0:rx1]
+        single_region_map = merged_regions_maps[bid][:, :]
         single_region_map = single_region_map.reshape(-1)
         cnt = Counter(single_region_map)
 
@@ -164,18 +164,21 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
                 continue
             for cur_req_new_region_id in merged_new_regions_contain_dict[merged_region_id]:
                 cur_req_new_region = req_new_regions_dict[cur_req_new_region_id]
+                cur_req_ori_region = cur_req_new_region.original_region
                 cur_iou = region_iou(cur_req_new_region, single_pad_shift_result)
-                if iou_thresh == 0.0:
-                    if cur_iou > most_iou:
-                        req_new_regions_list = [cur_req_new_region]
-                        most_iou = cur_iou
-                else:
-                    if cur_iou > iou_thresh:         
-                        req_new_regions_list.append(cur_req_new_region)
+                if cur_iou > iou_thresh:         
+                    req_new_regions_list.append(cur_req_new_region)
+                    # print(cur_iou)
+                    # print(bid, cur_req_new_region.x, cur_req_new_region.y, \
+                    #     cur_req_new_region.w, cur_req_new_region.h)
+                    # print(cur_req_ori_region.fid, cur_req_ori_region.x, cur_req_ori_region.y, \
+                    #     cur_req_ori_region.w, cur_req_ori_region.h)
 
         if len(req_new_regions_list) == 0 or len(req_new_regions_list) > 1:
             continue
-        
+
+        print(bid, single_pad_shift_result.x, single_pad_shift_result.y, 
+            single_pad_shift_result.w, single_pad_shift_result.h, round(single_pad_shift_result.conf, 2))
         for cur_req_new_region in req_new_regions_list:
             # get corresponding req_region info
             fx = cur_req_new_region.fx
@@ -185,6 +188,7 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
             old_x0 = cur_req_new_region.original_region.x
             old_y0 = cur_req_new_region.original_region.y
             fid = cur_req_new_region.original_region.fid
+            print(fid, old_x0, old_y0, new_x0, new_y0)
 
             # for every possible region, read original single_pad_shift_result info
             result_x = single_pad_shift_result.x
@@ -211,6 +215,7 @@ def restore_merged_regions_detection_box(pad_shift_results, merged_new_regions_d
                 single_pad_shift_result.conf, single_pad_shift_result.label, single_pad_shift_result.resolution,
                 single_pad_shift_result.origin
             ))
+            print(fid, result_x, result_y, result_w, result_h, round(single_pad_shift_result.conf, 2))
             restored_req_regions_id.append(cur_req_new_region.region_id)
 
     return restored_pad_shift_results, restored_req_regions_id

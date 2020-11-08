@@ -3,7 +3,7 @@
 # The directory to your dataset
 # The data must be organized as /path/to/dataset/your_video_name/src/%010d.png, start from id=0
 # We use png to avoid error caused by jpeg compression
-data_dir: /home/gc/videos
+data_dir: D:\chicago\videos
 #
 # Set the default value of parameters here
 # All the parameters here will be forwarded to each instance
@@ -94,85 +94,17 @@ instances:
   # Deprecated parameter
   rpn_enlarge_ratio: 0.0
   # context padding
-  context_padding_type: region
-  context_val:
-    - 0.0
-    - 0.3
-    - 0.5
-    - 1.0
-  blank_padding_type: region
-  blank_val:
-    - 0.0
-    - 0.3
-    - 0.5
-  intersect_iou: 0.0
-  merge_iou: 
-    - 1.0
-    - 0.0
-  cleanup: False
-  resize_method:
-    - resize_no
-  filter_method:
-    - False
-    - dds
-
-# the configuration for the streamB pack: whole-whole
-- high_qp: 26
-  high_resolution: 0.8
-  low_qp: 36
-  low_resolution: 0.8
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
   context_padding_type: whole
   context_val:
-    - 0.01
-    - 0.03
-    - 0.05
-    - 0.07
+    - 0.0
   blank_padding_type: whole
   blank_val:
-    - 0.01
-    - 0.03
-    - 0.05
+    - 0.0
   intersect_iou: 0.0
   merge_iou: 
-    - 0.0
+    - 1.0
   cleanup: False
   resize_method:
     - resize_no
   filter_method:
-    - dds
     - False
-
-# the configuration for the streamB pack: inverse-inverse
-- high_qp: 26
-  high_resolution: 0.8
-  low_qp: 36
-  low_resolution: 0.8
-  method: streamBpack
-  # Deprecated parameter
-  rpn_enlarge_ratio: 0.0
-  # context padding
-  context_padding_type: inverse
-  context_val:
-    - 0.0005
-    - 0.0003
-    - 0.0001
-    - 0.001
-  blank_padding_type: inverse
-  blank_val:
-    - 0.0005
-    - 0.0001
-    - 0.001
-  intersect_iou: 0.0
-  merge_iou: 
-    - 0.0
-  cleanup: False
-  resize_method:
-    - resize_no
-  filter_method:
-    - dds
-    - False
-  

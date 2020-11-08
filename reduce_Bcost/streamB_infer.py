@@ -614,14 +614,21 @@ def analyze_dds_filtered(
                 req_new_regions_dict, merged_new_regions_contain_dict, 
                 merged_regions_maps, src_image_w, src_image_h, iou_thresh=intersect_iou
             )
-        restored_pad_shift_results = merge_boxes_in_results(restored_pad_shift_results.regions_dict, 
-            server.config.low_threshold, server.config.suppression_threshold)
+        # restored_pad_shift_results = merge_boxes_in_results(restored_pad_shift_results.regions_dict, 
+        #     server.config.low_threshold, server.config.suppression_threshold)
 
         if not cleanup:
             vis_pack_direc = f'{video_name}-vis-pack'
             pack_fnames = sorted([f for f in os.listdir(shift_images_direc) if "png" in f])
             draw_region_rectangle(shift_images_direc, pack_fnames, pad_shift_results.regions_dict, 
                 vis_pack_direc, display_result=True, drop_no_rect=True, clean_save=False)
+            vis_restore_direc = video_name + '-vis-restore'
+            restore_fnames = []
+            for cur_fid in range(start_fid, end_fid):
+                restore_fnames.append(f"{str(cur_fid).zfill(10)}.png")
+            draw_region_rectangle(server.config.high_images_path, restore_fnames, \
+                restored_pad_shift_results.regions_dict, vis_restore_direc, \
+                display_result=True, clean_save=False, drop_no_rect=True)
 
         # Combine with results on packed images
         all_restored_results.combine_results(restored_pad_shift_results, 
@@ -644,10 +651,12 @@ def analyze_dds_filtered(
     all_restored_results.write(f"{video_name}-pack-txt")
     # combine with low-quality results
     all_restored_results.combine_results(mpeg_regions_result, server.config.intersection_threshold)
+    all_restored_results.write(f"{video_name}-ori")
 
     # merge detection box again
     all_restored_results = merge_boxes_in_results(all_restored_results.regions_dict, 
         server.config.low_threshold, server.config.suppression_threshold)
+    all_restored_results.write(f"{video_name}")
     total_time += total_pad_time
     total_time += total_shift_time
     total_time += total_infer_time

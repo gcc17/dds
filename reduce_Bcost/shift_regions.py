@@ -112,6 +112,14 @@ def pack_filtered_padded_regions(
     packer = newPacker(rotation=False)
     packer.add_bin(width=src_image_w, height=src_image_h, count=float("inf"))
 
+    for cur_merged_region_id, cur_merged_new_region in merged_new_regions_dict.items():
+        string_rep = (f"{cur_merged_new_region.original_region.fid}, "
+                      f"{cur_merged_new_region.x:0.3f}, {cur_merged_new_region.y:0.3f}, "
+                      f"{cur_merged_new_region.w:0.3f}, {cur_merged_new_region.h:0.3f}, "
+                      f"{cur_merged_new_region.original_region.conf:0.3f}, "
+                      f"{cur_merged_new_region.original_region.label}, {cur_merged_new_region.original_region.origin}")
+        # print(string_rep)
+
     # add context_blank-padded merged region into to the packer
     for cur_merged_region_id, cur_merged_new_region in merged_new_regions_dict.items():
         abs_total_w = int(cur_merged_new_region.w * src_image_w)
@@ -119,7 +127,7 @@ def pack_filtered_padded_regions(
         packer.add_rect(
             width=abs_total_w, height=abs_total_h, rid=cur_merged_new_region.region_id
         )
-        print(f'({abs_total_w}, {abs_total_h})')
+        # print(f'({abs_total_w}, {abs_total_h})')
     
     print('before packing')
     packer.pack()
@@ -131,7 +139,7 @@ def pack_filtered_padded_regions(
     # after running rectpack, find out these rectangles
     for rect in all_rects:
         b, x, y, w, h, rid = rect
-        print(x,y,w,h)
+        # print(b,x,y,w,h)
         b += start_bid
         if b not in shift_images.keys():
             shift_images[b] = np.zeros((src_image_h, src_image_w, 3), dtype=np.uint8)
@@ -146,8 +154,8 @@ def pack_filtered_padded_regions(
         # get shift amount: new_location - old_location
         shift_x = x/src_image_w - cur_merged_new_region.blank_x
         shift_y = y/src_image_h - cur_merged_new_region.blank_y
-        merged_new_regions_dict[rid].x = x/src_image_w
-        merged_new_regions_dict[rid].y = y/src_image_h
+        merged_new_regions_dict[rid].x += shift_x
+        merged_new_regions_dict[rid].y += shift_y
         
         # read region content from file
         full_pad_region_path = os.path.join(padded_regions_direc, f"region-{rid}.png")
