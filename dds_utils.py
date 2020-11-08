@@ -948,54 +948,6 @@ def visualize_single_regions(region, images_direc, label="debugging"):
     cv.destroyAllWindows()
 
 
-def draw_region_rectangle(image_direc, fnames, regions_dict, save_image_direc,
-        rec_color=(255, 0, 0), anno_text=None, display_result=False,
-        text_loc=(50,500), font_scale=1, thickness=2):
-    os.makedirs(save_image_direc, exist_ok=True)
-    for fname in os.listdir(save_image_direc):
-        if "png" not in fname:
-            continue
-        else:
-            os.remove(os.path.join(save_image_direc, fname))
-            
-    for fname in fnames:
-        if "png" not in fname:
-            continue
-        fid = int(fname.split(".")[0])
-        image_path = os.path.join(image_direc, fname)
-        if not os.path.exists(image_path):
-            continue
-        image = cv.imread(image_path)
-        image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
-
-        if fid not in regions_dict.keys():
-            continue
-        for region in regions_dict[fid]:
-            if region.w * region.h == 0:
-                continue
-            image_h = image.shape[0]
-            image_w = image.shape[1]
-            x_min = int(region.x * image_w)
-            y_min = int(region.y * image_h)
-            x_max = int(region.w * image_w) + x_min
-            y_max = int(region.h * image_h) + y_min
-            # ipdb.set_trace()
-            cv.rectangle(image, (x_min, y_min), (x_max, y_max), rec_color, 4)
-
-            if display_result:
-                anno_font = cv.FONT_HERSHEY_SIMPLEX
-                result_text = f"{region.label}-{region.conf}"
-                cv.putText(image, result_text, (x_min, y_min), anno_font, font_scale, rec_color, thickness)
-        
-        if anno_text:
-            anno_font = cv.FONT_HERSHEY_SIMPLEX
-            new_text = f"{anno_text}-{fid}"
-            cv.putText(image, new_text, text_loc, anno_font, font_scale, rec_color, thickness)
-        image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-        cv.imwrite(os.path.join(save_image_direc, fname), image, 
-            [cv.IMWRITE_PNG_COMPRESSION, 0])
-
-
 def write_compute_cost_txt(fname, vid_name, frame_cnt, 
         pad_time, shift_time, infer_time, total_time):
     header = ("video-name,frame-count,pad-time,shift-time,infer-time,total-time")

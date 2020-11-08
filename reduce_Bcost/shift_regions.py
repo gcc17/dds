@@ -48,7 +48,7 @@ def pack_merged_regions_as_image(merged_new_regions_dict, \
             merged_regions_maps[b] = np.zeros((src_image_h, src_image_w), dtype=int)
             merged_regions_maps[b][:,:] = -1
             # set the whole image as 'blank'
-            # shift_images[b] = normalize_image(shift_images[b])
+            shift_images[b] = normalize_image(shift_images[b])
         
         if rid not in merged_new_regions_dict.keys():
             exit()
@@ -95,7 +95,6 @@ def pack_merged_regions_as_image(merged_new_regions_dict, \
 def pack_filtered_padded_regions(
         req_new_regions_dict, merged_new_regions_dict, merged_new_regions_contain_dict, 
         shift_images_direc, padded_regions_direc, src_image_w, src_image_h, start_bid=0, 
-        merged_images_direc=None,
     ):
     
      # Create directory for saving shift_images
@@ -103,10 +102,6 @@ def pack_filtered_padded_regions(
     for fname in os.listdir(shift_images_direc):
         if 'png' in fname:
             os.remove(os.path.join(shift_images_direc, fname))
-    npy_direc = 'npy_files'
-    os.makedirs(npy_direc, exist_ok=True)
-    shutil.rmtree(npy_direc)
-    os.makedirs(npy_direc, exist_ok=True)
     # Create packer of rectpack
     # packer = newPacker(pack_algo=GuillotineBssfSas, rotation=False)
     packer = newPacker(rotation=False)
@@ -146,7 +141,7 @@ def pack_filtered_padded_regions(
             merged_regions_maps[b] = np.zeros((src_image_h, src_image_w), dtype=int)
             merged_regions_maps[b][:,:] = -1
             # set the whole image as 'blank'
-            # shift_images[b] = normalize_image(shift_images[b])
+            shift_images[b] = normalize_image(shift_images[b])
         
         if rid not in merged_new_regions_dict.keys():
             exit()
@@ -177,33 +172,6 @@ def pack_filtered_padded_regions(
             cur_req_new_region.x += shift_x
             cur_req_new_region.y += shift_y
             req_new_regions_dict[cur_req_new_region_id] = cur_req_new_region
-
-            if merged_images_direc:
-
-                ori_x0 = int(cur_req_new_region.original_region.x * src_image_w)
-                ori_y0 = int(cur_req_new_region.original_region.y * src_image_h)
-                ori_x1 = int(cur_req_new_region.original_region.w * src_image_w) + ori_x0
-                ori_y1 = int(cur_req_new_region.original_region.h * src_image_h) + ori_y0
-                new_x0 = int(cur_req_new_region.x * src_image_w)
-                new_y0 = int(cur_req_new_region.y * src_image_h)
-                new_x1 = int(cur_req_new_region.w * src_image_w) + new_x0
-                new_y1 = int(cur_req_new_region.h * src_image_h) + new_y0
-                cur_fid = cur_req_new_region.original_region.fid
-                if len(merged_new_regions_contain_dict[rid]) > 1:
-                    exit()
-                npy_name = (f'{cur_fid}_{x}_{x+w}_'
-                            f'{y}_{y+h}_{ori_x0}_{ori_x1}_{ori_y0}_{ori_y1}')
-                fname = f"{str(cur_fid).zfill(10)}.png"
-                # if last_fid == cur_fid:
-                #     region_image = last_image
-                # else:
-                #     region_image = cv.imread(os.path.join(merged_images_direc, fname))
-                #     last_fid = cur_fid
-                #     last_image = region_image
-                # npy_data = region_image[ori_y0:ori_y1, ori_x0:ori_x1, :]
-                
-                npy_data = cv.cvtColor(region_content, cv.COLOR_RGB2BGR)
-                np.save(os.path.join(npy_direc, f'{npy_name}.npy'), npy_data)
     
     # save shift_images
     for bid, shift_image in shift_images.items():

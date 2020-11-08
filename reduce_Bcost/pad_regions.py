@@ -442,7 +442,7 @@ def save_padded_region(
 
     # Set the blank-padded region background as normalization value
     blank_padded_region = np.zeros((abs_new_h, abs_new_w, 3), dtype=np.uint8)
-    # blank_padded_region = normalize_image(blank_padded_region)
+    blank_padded_region = normalize_image(blank_padded_region)
     
     abs_context_x = int(merged_new_region.original_region.x * src_image_w)
     abs_context_y = int(merged_new_region.original_region.y * src_image_h)
@@ -473,8 +473,8 @@ def save_padded_region(
 
 
 def pad_filtered_regions_blank(
-        merged_new_regions_dict, batch_images_direc, merged_images_direc, blank_padding_type, blank_val, 
-        sort_context_region=False
+        merged_new_regions_dict, batch_images_direc, merged_images_direc, 
+        blank_padding_type, blank_val, sort_context_region=False
     ):
 
     padded_regions_direc = f'{batch_images_direc}-padded_regions'

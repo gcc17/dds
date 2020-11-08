@@ -6,9 +6,8 @@ from backend.server import Server
 from frontend.client import Client
 from dds_utils import (ServerConfig, read_results_dict, Results, merge_boxes_in_results,
                        evaluate, write_stats)
-from reduce_Bcost.streamB_infer import (analyze_merge_regions, analyze_combined_methods,
-                        analyze_encoded_regions, analyze_dds_filtered)
-from reduce_Bcost.streamB_utils import (draw_region_rectangle, prepare_high_low_images)
+from reduce_Bcost.streamB_infer import (analyze_dds_filtered)
+from reduce_Bcost.streamB_utils import (draw_region_rectangle)
 import ipdb
 import shutil
 import sys
@@ -46,17 +45,11 @@ def main(args):
             for region_item in region_list:
                 req_regions_result.append(region_item)
 
-        mpeg_regions = read_results_dict(args.low_results_path)
-        mpeg_regions_result = Results()
-        for fid, region_list in mpeg_regions.items():
-            for region_item in region_list:
-                mpeg_regions_result.append(region_item)
-
         results, bw = analyze_dds_filtered(
-            server, args.video_name, req_regions_result, mpeg_regions_result,  
+            server, args.video_name, req_regions_result, args.low_results_path,  
             args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
-            resize_method=args.resize_method, cleanup=args.cleanup, out_cost_file=args.out_cost_file, 
-            intersect_iou=args.intersect_iou, merge_iou=args.merge_iou, filter_by_dds=args.filter_method
+            args.intersect_iou, args.merge_iou, args.filter_method,
+            cleanup=args.cleanup, out_cost_file=args.out_cost_file
         )
                 
     elif args.simulate:

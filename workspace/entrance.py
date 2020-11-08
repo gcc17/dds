@@ -148,7 +148,7 @@ def execute_single(single_instance):
                             f'{blank_padding_type}_{blank_val}_inter_{intersect_iou}_merge_{merge_iou}_'
                             f'{resize_method}_filter_{filter_method}')
         if single_instance['overwrite'] == False and \
-            os.path.exists(os.path.join(result_direc, f'{result_file_name}-pack-txt')):
+            os.path.exists(os.path.join(result_direc, result_file_name)):
             print(f"Skipping {result_file_name}")
         else:
             single_instance['video_name'] = os.path.join(result_direc, result_file_name)
