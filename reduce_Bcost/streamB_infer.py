@@ -97,6 +97,7 @@ def analyze_dds_filtered(
             dds_results, infer_elapsed = server.emulate_high_query(
                 dds_images_direc, f'{base_images_direc}-cropped', dds_req_regions_result)
             total_infer_time += infer_elapsed
+            total_frame_cnt += 1
 
             # Filter req_region in the batch
             cur_req_regions_result = filter_regions_dds(
@@ -105,6 +106,8 @@ def analyze_dds_filtered(
                 confid_thresh=server.config.prune_score, max_object_size=server.config.max_object_size
             )
 
+        if len(cur_req_regions_result) == 0:
+            continue
         # Merge high-quality req_regions and low-quality frames
         merged_images_direc = f'{batch_images_direc}-merged'
         high_batch_video_size, _ = encode_batch_filtered_regions(

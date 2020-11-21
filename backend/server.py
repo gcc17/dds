@@ -48,6 +48,7 @@ class Server:
                           images=None):
         final_results = Results()
         rpn_regions = Results()
+        all_rpn_regions = Results()
 
         if fnames is None:
             fnames = sorted(os.listdir(images_direc))
@@ -64,7 +65,7 @@ class Server:
                 image = cv.imread(image_path)
             image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
 
-            detection_results, rpn_results = (
+            detection_results, rpn_results, all_rpn = (
                 self.detector.infer(image))
             frame_with_no_results = True
             for label, conf, (x, y, w, h) in detection_results:
@@ -80,6 +81,10 @@ class Server:
                            resolution, origin="generic")
                 rpn_regions.append(r)
                 frame_with_no_results = False
+            for label, conf, (x, y, w, h) in all_rpn:
+                r = Region(fid, x, y, w, h, conf, label,
+                           resolution, origin="generic")
+                all_rpn_regions.append(r)
             self.logger.debug(
                 f"Got {len(final_results)} results "
                 f"and {len(rpn_regions)} for {fname}")
@@ -88,7 +93,7 @@ class Server:
                 final_results.append(
                     Region(fid, 0, 0, 0, 0, 0.1, "no obj", resolution))
 
-        return final_results, rpn_regions
+        return final_results, rpn_regions, all_rpn_regions
 
     def get_regions_to_query(self, rpn_regions, detections):
         req_regions = Results()

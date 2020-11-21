@@ -65,6 +65,9 @@ def execute_single(single_instance):
 
         # skip if result file already exists
         result_file_name = f"{video_name}_mpeg_{mpeg_resolution}_{mpeg_qp}"
+        if 'single_frame_cnt' in single_instance.keys():
+            single_frame_cnt = single_instance['single_frame_cnt']
+            result_file_name = f"{result_file_name}_{single_frame_cnt}"
         if single_instance['overwrite'] == False and \
             os.path.exists(os.path.join(result_direc, result_file_name)):
             print(f"Skipping {result_file_name}")
@@ -107,7 +110,13 @@ def execute_single(single_instance):
             single_instance['outfile'] = os.path.join(result_direc, 'stats')
             single_instance['out_cost_file'] = os.path.join(result_direc, 'costs')
             single_instance['ground_truth'] = os.path.join(result_direc, f'{video_name}_gt')
-            single_instance['low_results_path'] = os.path.join(result_direc, f'{video_name}_mpeg_{low_res}_{low_qp}')
+            if 'single_frame_cnt' in single_instance.keys():
+                single_frame_cnt = single_instance['single_frame_cnt']
+                single_instance['low_results_path'] = os.path.join(result_direc, 
+                    f'{video_name}_mpeg_{low_res}_{low_qp}_{single_frame_cnt}')
+            else:
+                single_instance['low_results_path'] = os.path.join(result_direc, 
+                    f'{video_name}_mpeg_{low_res}_{low_qp}')
 
             if single_instance["mode"] == 'implementation':
                 assert single_instance['hname'] != False, "Must provide the server address for implementation, abort."
@@ -148,7 +157,7 @@ def execute_single(single_instance):
                             f'{blank_padding_type}_{blank_val}_inter_{intersect_iou}_merge_{merge_iou}_'
                             f'{resize_method}_filter_{filter_method}')
         if single_instance['overwrite'] == False and \
-            os.path.exists(os.path.join(result_direc, result_file_name)):
+            os.path.exists(os.path.join(result_direc, f"{result_file_name}-high")):
             print(f"Skipping {result_file_name}")
         else:
             single_instance['video_name'] = os.path.join(result_direc, result_file_name)
@@ -156,7 +165,13 @@ def execute_single(single_instance):
             single_instance['outfile'] = os.path.join(result_direc, 'stats')
             single_instance['out_cost_file'] = os.path.join(result_direc, 'costs')
             single_instance['ground_truth'] = os.path.join(result_direc, f'{video_name}_gt')
-            single_instance['low_results_path'] = os.path.join(result_direc, f'{video_name}_mpeg_{low_res}_{low_qp}')
+            if 'single_frame_cnt' in single_instance.keys():
+                single_frame_cnt = single_instance['single_frame_cnt']
+                single_instance['low_results_path'] = os.path.join(result_direc, 
+                    f'{video_name}_mpeg_{low_res}_{low_qp}_{single_frame_cnt}')
+            else:
+                single_instance['low_results_path'] = os.path.join(result_direc, 
+                    f'{video_name}_mpeg_{low_res}_{low_qp}')
             single_instance['req_regions_fname'] = os.path.join(result_direc, \
                 f'{dds_result_file_name}-req_regions')
 

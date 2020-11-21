@@ -131,14 +131,19 @@ class Detector:
         # Get RPN regions along with classification results
         # rpn results array will have (class, (xmin, xmax, ymin, ymax)) typles
         results_rpn = []
+        all_rpn = []
         for idx_region, region in enumerate(output_dict['RPN_box_normalized']):
             x = region[1]
             y = region[0]
             w = region[3] - region[1]
             h = region[2] - region[0]
             conf = output_dict['RPN_score'][idx_region]
+            if w*h == 0.0:
+                continue
+            print(x, y, w, h, conf)
+            all_rpn.append(("object", conf, (x, y, w, h)))
             if conf < Detector.rpn_threshold or w * h == 0.0 or w * h > 0.04:
                 continue
             results_rpn.append(("object", conf, (x, y, w, h)))
 
-        return results, results_rpn
+        return results, results_rpn, all_rpn
