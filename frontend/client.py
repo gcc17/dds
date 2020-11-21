@@ -6,6 +6,8 @@ import json
 from dds_utils import (Results, read_results_dict, cleanup, Region,
                        compute_regions_size, extract_images_from_video,
                        merge_boxes_in_results, write_compute_cost)
+from reduce_Acost.merge_low_frames import (merge_frames, restore_merged_results)
+from reduce_Bcost.streamB_utils import (draw_region_rectangle)
 import ipdb
 import timeit
 
@@ -81,6 +83,123 @@ class Client:
 
             # Remove encoded video manually
             shutil.rmtree(f"{video_name}-base-phase-cropped")
+            total_size += batch_video_size
+        
+        combine_start = timeit.default_timer()
+        final_results = merge_boxes_in_results(
+            final_results.regions_dict, 
+            self.config.low_threshold, self.config.suppression_threshold)
+        combine_elapsed = (timeit.default_timer() - combine_start)
+        total_time += combine_elapsed
+        total_time += total_infer_time
+        # final_rpn_results = merge_boxes_in_results(
+        #     final_rpn_results.regions_dict, 
+        #     -1, self.config.suppression_threshold)
+        final_results.fill_gaps(number_of_frames)
+
+        # Add RPN regions
+        final_results.combine_results(
+            final_rpn_results, self.config.intersection_threshold)
+
+        final_results.write(video_name)
+        self.logger.info(f"Infer time {total_infer_time} for "
+                        f"{number_of_frames} frames, "
+                        f"total elapsed time {total_time}")
+        if out_cost_file:
+            write_compute_cost(out_cost_file, video_name, number_of_frames, 
+                0, 0, total_infer_time, total_time)
+
+        return final_results, [total_size, 0]
+    
+
+    def analyze_video_merged_mpeg(self, video_name, raw_images_path, enforce_iframes, 
+            single_frame_cnt, out_cost_file=None):
+        number_of_frames = len(
+            [f for f in os.listdir(raw_images_path) if ".png" in f])
+
+        final_results = Results()
+        final_rpn_results = Results()
+        total_size = 0
+        total_infer_time = 0
+        total_time = 0
+        
+        for i in range(0, number_of_frames, self.config.batch_size):
+            start_frame = i
+            end_frame = min(number_of_frames, i + self.config.batch_size)
+
+            batch_fnames = sorted([f"{str(idx).zfill(10)}.png"
+                                   for idx in range(start_frame, end_frame)])
+
+            req_regions = Results()
+            for fid in range(start_frame, end_frame):
+                req_regions.append(
+                    Region(fid, 0, 0, 1, 1, 1.0, 2,
+                           self.config.low_resolution))
+            batch_video_size, _ = compute_regions_size(
+                req_regions, f"{video_name}-base-phase", raw_images_path,
+                self.config.low_resolution, self.config.low_qp,
+                enforce_iframes, True)
+            self.logger.info(f"{batch_video_size / 1024}KB sent "
+                             f"in base phase using {self.config.low_qp}QP")
+            extract_images_from_video(f"{video_name}-base-phase-cropped",
+                                      req_regions)
+            save_images_direc = f"{video_name}-merged-base"
+            merge_frames(f"{video_name}-base-phase-cropped", save_images_direc, 
+                        single_frame_cnt)
+            merged_fnames = sorted([f for f in os.listdir(save_images_direc) if "png" in f])
+            infer_start = timeit.default_timer()
+            results, rpn_results, all_rpn_results = (
+                self.server.perform_detection(
+                    save_images_direc,
+                    self.config.low_resolution, merged_fnames))
+            infer_elapsed = (timeit.default_timer() - infer_start)
+            total_infer_time += infer_elapsed
+            
+            low_results = Results()
+            low_results.combine_results(results, 1)
+            low_results.combine_results(rpn_results, self.config.intersection_threshold)
+            detections, filtered_rpn_results = \
+                self.server.simulate_low_query(
+                    0, len(merged_fnames), save_images_direc, low_results.regions_dict, False,
+                    self.config.rpn_enlarge_ratio, False)
+
+            # vis_results_direc = f"{video_name}-restore-vis_results"
+            # draw_region_rectangle(f"{video_name}-base-phase-cropped", batch_fnames, 
+            #     results.regions_dict, vis_results_direc)
+            # vis_reqs_direc = f"{video_name}-restore-vis_reqs"
+            # draw_region_rectangle(f"{video_name}-base-phase-cropped", batch_fnames, 
+            #     rpn_results.regions_dict, vis_reqs_direc)
+            # import ipdb; ipdb.set_trace()
+            
+            vis_results_direc = f"{save_images_direc}-vis_results"
+            draw_region_rectangle(save_images_direc, merged_fnames, detections.regions_dict,
+                vis_results_direc)
+            vis_reqs_direc_tmp = f"{save_images_direc}-vis_reqs-tmp"
+            vis_reqs_direc = f"{save_images_direc}-vis_reqs"
+            draw_region_rectangle(save_images_direc, merged_fnames, all_rpn_results.regions_dict, 
+                vis_reqs_direc_tmp, rec_side_width=4)
+            draw_region_rectangle(vis_reqs_direc_tmp, merged_fnames, filtered_rpn_results.regions_dict, 
+                vis_reqs_direc, rec_color=(0,0,255))
+            shutil.rmtree(vis_reqs_direc_tmp)
+            import ipdb; ipdb.set_trace()
+
+            results = restore_merged_results(single_frame_cnt, results, start_frame)
+            rpn_results = restore_merged_results(single_frame_cnt, rpn_results, start_frame)
+
+            self.logger.info(f"Detection {len(results)} regions for "
+                             f"batch {start_frame} to {end_frame} with a "
+                             f"total size of {batch_video_size / 1024}KB")
+            combine_start = timeit.default_timer()
+            final_results.combine_results(
+                results, self.config.intersection_threshold)
+            combine_elapsed = (timeit.default_timer() - combine_start)
+            total_time += combine_elapsed
+            final_rpn_results.combine_results(
+                rpn_results, self.config.intersection_threshold)
+
+            # Remove encoded video manually
+            shutil.rmtree(f"{video_name}-base-phase-cropped")
+            shutil.rmtree(save_images_direc)
             total_size += batch_video_size
         
         combine_start = timeit.default_timer()

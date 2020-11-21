@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 from dds_utils import (read_results_dict, Results)
 from .plot_utils import (Ellipse, get_colors, read_stats_costs, confidence_ellipse, pick_list_item, \
     sort_by_second_list, find_best_stat_point, get_markers, each_trick_point, simple_cull, dominates_stat_acc, \
-    get_all_videos_data, pareto_line_utils, read_logs)
+    get_all_videos_data, pareto_line_utils, read_logs, area_box_graph)
+from .streamB_utils import (get_low_file, get_high_file, get_gt_file, get_dds_file, two_results_diff, \
+    new_evaluate_all)
 import pandas as pd
 import shutil
 import ipdb
@@ -671,3 +673,758 @@ def compare_qp_trick(file_direc, target_video_list, stats_metric='F1', costs_met
     else:
         plt.show()
     plt.close()    
+
+
+def area_box_graph_wrapper(result_direc, save_direc, video_name, max_fid=299,
+        gt_confid_thresh=0.3, compare_confid_thresh=0.5, 
+        gt_max_area_thresh=0.3, compare_max_area_thresh=0.3):
+
+    print(result_direc)
+    gt_path = os.path.join(result_direc, get_gt_file(result_direc, dds_as_gt=False))
+    gt_regions_dict = read_results_dict(gt_path)
+    
+    low_path = os.path.join(result_direc, get_low_file(result_direc))
+    low_regions_dict = read_results_dict(low_path)
+    high_path = os.path.join(result_direc, get_high_file(result_direc))
+    high_regions_dict = read_results_dict(high_path)
+    dds_path = os.path.join(result_direc, get_dds_file(result_direc))
+    dds_regions_dict = read_results_dict(dds_path)
+    eval_regions_dicts = [low_regions_dict, high_regions_dict, dds_regions_dict]
+    eval_names = ['low', 'high', 'dds']
+    
+    area_all_dict = {}
+
+    for idx, regions_dict in enumerate(eval_regions_dicts):
+        area_all_dict[eval_names[idx]] = []
+        fn_dict, fp_dict, _, tp_dict = two_results_diff(max_fid, gt_regions_dict, regions_dict, 
+            gt_confid_thresh, compare_confid_thresh, gt_max_area_thresh, compare_max_area_thresh)
+        for fid, region_list in tp_dict.items():
+            for single_region in region_list:
+                area_all_dict[eval_names[idx]].append(single_region.w * single_region.h)
+    
+    area_all_dict['gt'] = []
+    for fid, region_list in gt_regions_dict.items():
+        for single_region in region_list:
+            area_all_dict['gt'].append(single_region.w * single_region.h)
+        
+    graph_title = f'{video_name}-detection_area'
+    area_box_graph(area_all_dict, graph_title, save_direc, f'{graph_title}.png')
+    
+
+def compare_filter_trick(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None):
+    
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.12, 0.1, 0.85, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    filter_type_list = ['dds', 'False']
+    for idx, filter_type in enumerate(filter_type_list):
+        stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+            target_video_name=target_video_list, filter_type=filter_type)
+        costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+            target_video_name=target_video_list, filter_type=filter_type)
+        
+        if idx == 0:
+            # baseline points
+            for method_name, method_result_dict in costs_baseline_result_dict.items():
+                baseline_mean_cost = np.mean(list(method_result_dict.values()))
+                baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+                if dds_as_gt and method_name == 'dds' and new_stat:
+                    continue
+                ax.scatter(baseline_mean_cost, baseline_mean_stat, label=method_name)
+        
+        mean_stat_cost_pair_list = []
+        for method_name, method_result_dict in costs_result_dict.items():
+            method_mean_cost = np.mean(list(method_result_dict.values()))
+            method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            mean_stat_cost_pair_list.append((method_mean_stat, method_mean_cost, method_name))
+        
+        print(mean_stat_cost_pair_list)
+        pareto_line_utils(ax, mean_stat_cost_pair_list, dominates_stat_acc, x_idx=1, y_idx=0, \
+            choose_metric=choose_metric, plot_label=f'filter-{filter_type}')
+    
+    ax.set_title('filter_type_compare')
+    ax.set_ylabel(f'{stats_metric}')
+    ax.set_xlabel(f'{costs_metric}')
+    ax.legend(loc='best')
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()    
+
+
+def scatter_tricks_effect(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None,
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11):
+    
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.12, 0.1, 0.85, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)
+    texts = []
+    
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        ax.scatter(baseline_mean_cost, baseline_mean_stat)
+        texts.append(plt.text(baseline_mean_cost, baseline_mean_stat, method_name))
+
+    # different tricks' points
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+
+        # no trick
+        if float(method_name_list[context_val_idx]) == 0 and \
+            float(method_name_list[blank_val_idx]) == 0 and \
+            method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] == 'False':
+            no_trick_mean_cost = np.mean(list(method_result_dict.values()))
+            no_trick_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            ax.scatter(no_trick_mean_cost, no_trick_mean_stat)
+            texts.append(plt.text(no_trick_mean_cost, no_trick_mean_stat, 'no_trick'))
+        
+        # only pad
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] == 'False':
+            pad_mean_cost = np.mean(list(method_result_dict.values()))
+            pad_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            ax.scatter(pad_mean_cost, pad_mean_stat)
+            texts.append(plt.text(pad_mean_cost, pad_mean_stat, 'pad'))
+        
+        # resize
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] != 'no' and method_name_list[filter_type_idx] == 'False':
+            resize_mean_cost = np.mean(list(method_result_dict.values()))
+            resize_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            ax.scatter(resize_mean_cost, resize_mean_stat)
+            texts.append(plt.text(resize_mean_cost, resize_mean_stat, 'resize_pad'))
+
+        # filter
+        if method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] != 'False':
+            filter_mean_cost = np.mean(list(method_result_dict.values()))
+            filter_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            ax.scatter(filter_mean_cost, filter_mean_stat)
+            texts.append(plt.text(filter_mean_cost, filter_mean_stat, 'filter'))
+            print('-------------')
+
+        # all
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] != 'no' and method_name_list[filter_type_idx] != 'False':
+            all_mean_cost = np.mean(list(method_result_dict.values()))
+            all_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            ax.scatter(all_mean_cost, all_mean_stat)
+            texts.append(plt.text(all_mean_cost, all_mean_stat, 'all'))
+    
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()
+
+
+def ellipse_tricks_effect(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, compare_cost=True,
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        merge_iou=None, inter_iou=None):
+    
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.1, 0.1, 0.7, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)
+    
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        ax.scatter(baseline_mean_cost, baseline_mean_stat, label=method_name)
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+
+    no_trick_costs = []
+    no_trick_stats = []
+    pad_costs = []
+    pad_stats = []
+    pad_resize_costs = []
+    pad_resize_stats = []
+    pad_filter_costs = []
+    pad_filter_stats = []
+    all_costs = []
+    all_stats = []
+    # different tricks' points
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        if compare_cost and (method_mean_cost > dds_mean_cost):
+            continue
+        if isinstance(merge_iou, list):
+            if float(method_name_list[merge_iou_idx]) not in merge_iou:
+                continue
+        elif merge_iou != None and (merge_iou != float(method_name_list[merge_iou_idx])):
+            continue
+        if isinstance(inter_iou, list):
+            if float(method_name_list[inter_iou_idx]) not in inter_iou:
+                continue
+        elif inter_iou != None and (inter_iou != float(method_name_list[inter_iou_idx])):
+            continue
+        print(method_name)
+
+        # no trick
+        if float(method_name_list[context_val_idx]) == 0 and \
+            float(method_name_list[blank_val_idx]) == 0 and \
+            method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] == 'False':
+            no_trick_mean_cost = np.mean(list(method_result_dict.values()))
+            no_trick_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            no_trick_costs.append(no_trick_mean_cost)
+            no_trick_stats.append(no_trick_mean_stat)
+        
+        # only pad
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] == 'False':
+            pad_mean_cost = np.mean(list(method_result_dict.values()))
+            pad_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            pad_costs.append(pad_mean_cost)
+            pad_stats.append(pad_mean_stat)
+        
+        # pad and resize
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] != 'no' and method_name_list[filter_type_idx] == 'False':
+            resize_mean_cost = np.mean(list(method_result_dict.values()))
+            resize_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            pad_resize_costs.append(resize_mean_cost)
+            pad_resize_stats.append(resize_mean_stat)
+
+        # pad and filter
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] == 'no' and method_name_list[filter_type_idx] != 'False':
+            filter_mean_cost = np.mean(list(method_result_dict.values()))
+            filter_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            pad_filter_costs.append(filter_mean_cost)
+            pad_filter_stats.append(filter_mean_stat)
+
+        # all
+        if float(method_name_list[context_val_idx]) != 0 and \
+            float(method_name_list[blank_val_idx]) != 0 and \
+            method_name_list[resize_val_idx] != 'no' and method_name_list[filter_type_idx] != 'False':
+            all_mean_cost = np.mean(list(method_result_dict.values()))
+            all_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            all_costs.append(all_mean_cost)
+            all_stats.append(all_mean_stat)
+    
+    ax.scatter(no_trick_costs, no_trick_stats, label='no_trick', c='purple')
+    ax.scatter(pad_costs, pad_stats, s=0.5, c='blue')
+    if pad_costs and pad_stats:
+        confidence_ellipse(np.array(pad_costs), np.array(pad_stats), \
+            ax, n_std=2, label='only_padding', 
+            alpha=0.5, edgecolor='blue', facecolor='lightblue', linestyle=':')
+    ax.scatter(pad_resize_costs, pad_resize_stats, s=0.5, c='fuchsia')
+    if pad_resize_costs and pad_resize_stats:
+        confidence_ellipse(np.array(pad_resize_costs), np.array(pad_resize_stats), \
+            ax, n_std=2, label='pad_resize', 
+            alpha=0.5, edgecolor='fuchsia', facecolor='pink', linestyle='--')
+    ax.scatter(pad_filter_costs, pad_filter_stats, s=0.5, c='firebrick')
+    if pad_filter_costs and pad_filter_stats:
+        confidence_ellipse(np.array(pad_filter_costs), np.array(pad_filter_stats), \
+            ax, n_std=2, label='pad_filter', 
+            alpha=0.5, edgecolor='firebrick', facecolor='indianred', linestyle='-.')
+    ax.scatter(all_costs, all_stats, s=0.5, c='lightgreen')
+    if all_costs and all_stats:
+        confidence_ellipse(np.array(all_costs), np.array(all_stats), \
+            ax, n_std=2, label='pad_resize_filter', 
+            alpha=0.5, edgecolor='lightgreen', facecolor='darkseagreen')
+    
+    plt.title("tricks_comparison")
+    ax.legend(bbox_to_anchor=(1.02, 0), loc=3, borderaxespad=0)
+    ax.set_xlabel(f'{costs_metric}')
+    ax.set_ylabel(f'{stats_metric}')
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()
+
+
+def compare_merge_iou(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, 
+        merge_iou_idx=7, merge_iou_list=[0.0, 1.0]):
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax1 = fig.add_axes([0.1, 0.1, 0.7, 0.8])
+    ax1.set_ylabel(f'{stats_metric}')
+    ax2 = ax1.twinx()
+    ax2.set_ylabel(f'{costs_metric}')
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)
+
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+
+    iou_cnt = len(merge_iou_list)
+    kept_method_name_list = []
+    removed_method_name_list = []
+    iou_all_costs = []
+    iou_all_stats = []
+    for i in range(iou_cnt):
+        iou_all_costs.append([])
+        iou_all_stats.append([])
+ 
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        cur_iou = float(method_name_list[merge_iou_idx])
+        if cur_iou not in merge_iou_list:
+            continue
+        method_name_list[merge_iou_idx] = 'all'
+        method_key = '_'.join(method_name_list)
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        if method_mean_cost > dds_mean_cost:
+            if method_key not in removed_method_name_list:
+                removed_method_name_list.append(method_key)
+            if method_key in kept_method_name_list:
+                kept_method_name_list.remove(method_key)
+        elif (method_key not in kept_method_name_list) and (method_key not in removed_method_name_list):
+            kept_method_name_list.append(method_key)
+    print(kept_method_name_list)
+
+    for method_key in kept_method_name_list:
+        find_all = True
+        for i in range(iou_cnt):
+            method_name_list = method_key.split('_')
+            method_name_list[merge_iou_idx] = str(merge_iou_list[i])
+            method_name = '_'.join(method_name_list)
+            if method_name not in costs_result_dict.keys():
+                print(method_name)
+                find_all = False
+                break
+        if not find_all:
+            continue
+
+        for i in range(iou_cnt):
+            method_name_list = method_key.split('_')
+            method_name_list[merge_iou_idx] = str(merge_iou_list[i])
+            method_name = '_'.join(method_name_list)
+            method_mean_cost = np.mean(list(costs_result_dict[method_name].values()))
+            method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            iou_all_costs[i].append(method_mean_cost)
+            iou_all_stats[i].append(method_mean_stat)
+    
+    unorder_costs = iou_all_costs[-1][:]
+    for i in range(iou_cnt):
+        tmp_unorder_costs = unorder_costs[:]
+        iou_all_costs[i], _ = sort_by_second_list(iou_all_costs[i], tmp_unorder_costs)
+        tmp_unorder_costs = unorder_costs[:]
+        iou_all_stats[i], _ = sort_by_second_list(iou_all_stats[i], tmp_unorder_costs)
+        ax1.plot(iou_all_stats[i], label=f"{stats_metric}_{merge_iou_list[i]}")
+        ax2.plot(iou_all_costs[i], label=f"{costs_metric}_{merge_iou_list[i]}", linestyle='--')    
+        
+    plt.title("merge iou comparison")
+    ax1.legend(bbox_to_anchor=(1.02, 0), loc="lower left", borderaxespad=0)
+    ax2.legend(bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()
+    
+        
+def compare_inter_iou(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, 
+        inter_iou_idx=5, inter_iou_list=[0.0, 0.2]):
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.1, 0.1, 0.7, 0.8])
+    ax.set_xlabel(f'{costs_metric}')
+    ax.set_ylabel(f'{stats_metric}')
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)
+
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        ax.scatter(baseline_mean_cost, baseline_mean_stat, label=method_name)
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+
+    iou_cnt = len(inter_iou_list)
+    kept_method_name_list = []
+    removed_method_name_list = []
+    iou_all_costs = []
+    iou_all_stats = []
+    for i in range(iou_cnt):
+        iou_all_costs.append([])
+        iou_all_stats.append([])
+ 
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        cur_iou = float(method_name_list[inter_iou_idx])
+        if cur_iou not in inter_iou_list:
+            continue
+        method_name_list[inter_iou_idx] = 'all'
+        method_key = '_'.join(method_name_list)
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        if method_mean_cost > dds_mean_cost:
+            if method_key not in removed_method_name_list:
+                removed_method_name_list.append(method_key)
+            if method_key in kept_method_name_list:
+                kept_method_name_list.remove(method_key)
+        elif (method_key not in kept_method_name_list) and (method_key not in removed_method_name_list):
+            kept_method_name_list.append(method_key)
+    print(kept_method_name_list)
+
+    for method_key in kept_method_name_list:
+        find_all = True
+        for i in range(iou_cnt):
+            method_name_list = method_key.split('_')
+            method_name_list[inter_iou_idx] = str(inter_iou_list[i])
+            method_name = '_'.join(method_name_list)
+            if method_name not in costs_result_dict.keys():
+                print(method_name)
+                find_all = False
+                break
+        if not find_all:
+            continue
+
+        for i in range(iou_cnt):
+            method_name_list = method_key.split('_')
+            method_name_list[inter_iou_idx] = str(inter_iou_list[i])
+            method_name = '_'.join(method_name_list)
+            method_mean_cost = np.mean(list(costs_result_dict[method_name].values()))
+            method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+            iou_all_costs[i].append(method_mean_cost)
+            iou_all_stats[i].append(method_mean_stat)
+    
+    unorder_costs = iou_all_costs[-1][:]
+    for i in range(iou_cnt):
+        tmp_unorder_costs = unorder_costs[:]
+        iou_all_costs[i], _ = sort_by_second_list(iou_all_costs[i], tmp_unorder_costs)
+        tmp_unorder_costs = unorder_costs[:]
+        iou_all_stats[i], _ = sort_by_second_list(iou_all_stats[i], tmp_unorder_costs)
+        ax.plot(iou_all_costs[i], iou_all_stats[i], label=f'inter_{inter_iou_list[i]}')  
+        
+    plt.title("intersection iou comparison")
+    ax.legend(bbox_to_anchor=(1.02, 0), loc="lower left", borderaxespad=0)
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()
+
+
+def pareto_all_methods(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, compare_cost=True,
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        context_type=None, blank_type=None, merge_iou=None, inter_iou=None):
+    
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.1, 0.1, 0.7, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)
+    texts = []
+    
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        ax.scatter(baseline_mean_cost, baseline_mean_stat)
+        texts.append(plt.text(baseline_mean_cost, baseline_mean_stat, method_name))
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+
+    mean_stat_cost_pair_list = []
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        if compare_cost and (method_mean_cost > dds_mean_cost):
+            continue
+        if isinstance(context_type, list):
+            if method_name_list[context_type_idx] not in context_type:
+                continue
+        elif context_type and (context_type != method_name_list[context_type_idx]):
+            continue
+        if isinstance(blank_type, list):
+            if method_name_list[blank_type_idx] not in blank_type:
+                continue
+        elif blank_type and (blank_type != method_name_list[blank_type_idx]):
+            continue
+        if isinstance(merge_iou, list):
+            if float(method_name_list[merge_iou_idx]) not in merge_iou:
+                continue
+        elif merge_iou != None and (merge_iou != float(method_name_list[merge_iou_idx])):
+            continue
+        if isinstance(inter_iou, list):
+            if float(method_name_list[inter_iou_idx]) not in inter_iou:
+                continue
+        elif inter_iou != None and (inter_iou != float(method_name_list[inter_iou_idx])):
+            continue
+        new_method_list = method_name_list[context_type_idx:merge_iou_idx+1]
+        new_method_list.append(method_name_list[resize_val_idx])
+        new_method_list.append(method_name_list[filter_type_idx])
+        new_method_name = '_'.join(new_method_list)
+
+        method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+        mean_stat_cost_pair_list.append((method_mean_stat, method_mean_cost, new_method_name))
+    
+    print(mean_stat_cost_pair_list)
+    x_list, y_list, method_list = pareto_line_utils(
+        ax, mean_stat_cost_pair_list, dominates_stat_acc, x_idx=1, y_idx=0, \
+        choose_metric=choose_metric)
+    for i in range(len(x_list)):
+        texts.append(plt.text(x_list[i], y_list[i], method_list[i], fontsize='x-small'))
+    
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
+    ax.set_title('methods pareto line')
+    ax.set_ylabel(f'{stats_metric}')
+    ax.set_xlabel(f'{costs_metric}')
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()    
+
+
+def compare_resize_region_area(file_direc, gt_fname, res_fnames, 
+        gt_confid_thresh=0.3, gt_max_area_thresh=0.3, 
+        compare_confid_thresh=0.5, compare_max_area_thresh=0.3, 
+        context_type_idx=3, blank_val_idx=6, resize_val_idx=12):
+
+    gt_results_dict = read_results_dict(os.path.join(file_direc, gt_fname))
+    max_fid = max(list(gt_results_dict.keys()))
+    area_dict = {}
+    area_boundary = []
+
+    for fname in res_fnames:
+        compare_results_dict = read_results_dict(os.path.join(file_direc, fname))
+        _, _, _, tp_dict = two_results_diff(max_fid, gt_results_dict, compare_results_dict, \
+            gt_confid_thresh, compare_confid_thresh, gt_max_area_thresh, compare_max_area_thresh)
+        method_name_list = fname.split('_')
+        resize_method = '_'.join(method_name_list[resize_val_idx-1:resize_val_idx+1])
+        pad_method = '_'.join(method_name_list[context_type_idx:blank_val_idx+1])
+        area_dict[resize_method] = []
+        if method_name_list[resize_val_idx] != 'no':
+            area_boundary.append(float(method_name_list[resize_val_idx]))
+
+        for fid, region_list in tp_dict.items():
+            for single_region in region_list:
+                area_dict[resize_method].append(single_region.w * single_region.h)
+    area_boundary.sort()
+
+    area_count = {}
+    for resize_method, area_list in area_dict.items():
+        area_count[resize_method] = np.zeros(len(area_boundary) + 1)
+        for single_area in area_list:
+            if single_area <= area_boundary[0]:
+                area_count[resize_method][0] += 1
+            elif single_area > area_boundary[-1]:
+                area_count[resize_method][-1] += 1
+            for idx in range(len(area_boundary)-1):
+                if area_boundary[idx] < single_area < area_boundary[idx+1]:
+                    area_count[resize_method][idx+1] += 1
+    
+    fig = plt.figure()
+    plt.grid(linestyle=':', axis='y')
+    plt.xlabel("resize methods")
+    plt.ylabel("area count")
+    plt.title(f"{pad_method} region area comparison")
+
+    bar_width = round(1/(len(area_boundary) + 1), 1)
+    x = np.arange(len( list(area_count.keys()) ))
+    xgroup_labels = []
+    x_loc = []
+    y_data = []
+    for i in range(len(area_boundary) + 1):
+        x_loc.append([])
+        y_data.append([])
+
+    for i, resize_method in enumerate(list(area_count.keys())):
+        xgroup_labels.append(resize_method)
+        for j, area_bin_cnt in enumerate(area_count[resize_method]):
+            x_loc[j].append( i + (j - (len(area_boundary)/2))*bar_width )
+            y_data[j].append(area_bin_cnt)
+    
+    for i in range(len(area_boundary) + 1):
+        if i==0:
+            area_label = f'(0,{area_boundary[0]}]'
+        elif i==len(area_boundary):
+            area_label = f'({area_boundary[-1]},1]'
+        else:
+            area_label = f'({area_boundary[i-1]}, {area_boundary[i]}]'
+        plt.bar(x_loc[i], y_data[i], bar_width, label=area_label)
+
+    plt.xticks(x, list(area_count.keys()))
+    plt.legend()
+    plt.show()
+
+
+def more_cost_method(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count'):
+    
+    costs_list = []
+    stats_list = []
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+        stats_list.extend(cur_stats_list)
+        
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list)       
+    
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+    dds_mean_stat = np.mean(list(stats_baseline_result_dict['dds'].values()))
+    print(dds_mean_cost, dds_mean_stat)
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split('_')
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+        if method_mean_cost > dds_mean_cost:
+            print(method_name, method_mean_cost, method_mean_stat)
+

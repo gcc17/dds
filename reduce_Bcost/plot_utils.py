@@ -235,24 +235,12 @@ def read_stats_costs(stats_path=None, costs_path=None):
     return stats_list, costs_list
 
 
-# results/dashcam_1/dashcam_1_streamBpack_whole_0.07_whole_0.05_min_0.0_ratio_1_inter_0.2_merge_0.0
-# _track_True_diff_0.1_frameinter_10
-# results/dashcam_1/dashcam_1_streamBpack_region_0.0_region_0.0_inter_0.2_merge_0.0
-# _track_False_diff_0.0_frameinter_0_[16, 24, 26]_[50, 75, 100]
-def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=None, 
+# trafficcam_1_streamBpack_region_0.0_region_0.0_inter_0.0_merge_1.0_resize_no_filter_False-pack-txt
+def pick_list_item(target_list, target_metric, fname_len=15, target_video_name=None, 
         context_type=None, context_val=None, blank_type=None, blank_val=None,
-        area_upper_bound=None, resize_type=None, resize_val=None, 
-        inter_iou=None, merge_iou=None,
-        whether_track=None, diff_threshold=None, frame_interval=None,
-        qp_list=None, percent_list=None,
-        deal_with_comma=False,
+        inter_iou=None, merge_iou=None, resize_val=None, filter_type=None,
         context_type_idx=3, context_val_idx=4, blank_type_idx=5, blank_val_idx=6, 
-        area_upper_bound_idx=8, resize_type_idx=9, resize_val_idx=10, 
-        # inter_iou_idx=12, merge_iou_idx=14, 
-        # whether_track_idx=16, diff_threshold_idx=18, frame_interval_idx=20,
-        inter_iou_idx=8, merge_iou_idx=10,
-        whether_track_idx=12, diff_threshold_idx=14, frame_interval_idx=16,
-        qp_list_idx=17, percent_list_idx=18):
+        inter_iou_idx=8, merge_iou_idx=10, resize_val_idx=12, filter_type_idx=14):
 
     target_head = target_list[0].split(',')
     for idx, head_item in enumerate(target_head):
@@ -265,16 +253,6 @@ def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=N
     for target_item in target_list[1:]:
         # read fname and video_name
         split_items = target_item.split(',')
-        if deal_with_comma:
-            last_item = (split_items[0].split('_'))[-1]
-            last_item = str(last_item)
-            next_item = str(split_items[1])
-            if last_item[0] == '[' and next_item[0] == ' ':
-                res_fname = ','.join(split_items[:5])
-                remain_items = split_items[5:]
-                split_items = [res_fname]
-                split_items.extend(remain_items)
-
         res_path = split_items[0]
         res_direc = os.path.split(res_path)[0]
         res_fname = os.path.split(res_path)[1]
@@ -287,7 +265,7 @@ def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=N
             print(cur_video_name, res_fname, target_video_name)
             continue
         
-        # find target row, except DDS method
+        # find target row
         para_list = res_fname.split('_')
         if len(para_list) != fname_len:
             if len(para_list) < 5:
@@ -324,21 +302,7 @@ def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=N
                 continue
         elif blank_val != None and (blank_val != float(para_list[blank_val_idx])):
             continue
-        if isinstance(area_upper_bound, list):
-            if float(para_list[area_upper_bound_idx]) not in area_upper_bound:
-                continue
-        elif area_upper_bound != None and (area_upper_bound != float(para_list[area_upper_bound_idx])):
-            continue
-        if isinstance(resize_type, list):
-            if para_list[resize_type_idx] not in resize_type:
-                continue
-        elif resize_type and (resize_type != para_list[resize_type_idx]):
-            continue
-        if isinstance(resize_val, list):
-            if float(para_list[resize_val_idx]) not in resize_val:
-                continue
-        elif resize_val != None and (resize_val != float(para_list[resize_val_idx])):
-            continue
+        
         if isinstance(inter_iou, list):
             if float(para_list[inter_iou_idx]) not in inter_iou:
                 continue
@@ -349,30 +313,15 @@ def pick_list_item(target_list, target_metric, fname_len=19, target_video_name=N
                 continue
         elif merge_iou != None and (merge_iou != float(para_list[merge_iou_idx])):
             continue
-        if isinstance(whether_track, list):
-            if bool(para_list[whether_track_idx]) not in whether_track:
+        if isinstance(resize_val, list):
+            if str(para_list[resize_val_idx]) not in [str(i) for i in resize_val]:
                 continue
-        elif whether_track != None and (whether_track != bool(para_list[whether_track_idx])):
+        elif resize_val != None and ( str(resize_val) != str(para_list[resize_val_idx]) ):
             continue
-        if isinstance(diff_threshold, list):
-            if float(para_list[diff_threshold_idx]) not in diff_threshold:
+        if isinstance(filter_type, list):
+            if (para_list[filter_type_idx]) not in filter_type:
                 continue
-        elif diff_threshold != None and (diff_threshold != float(para_list[diff_threshold_idx])):
-            continue
-        if isinstance(frame_interval, list):
-            if int(para_list[frame_interval_idx]) not in frame_interval:
-                continue
-        elif frame_interval != None and (frame_interval != int(para_list[frame_interval_idx])):
-            continue
-        if isinstance(qp_list, list):
-            if para_list[qp_list_idx] not in qp_list_idx:
-                continue
-        elif qp_list and (qp_list != para_list[qp_list_idx]):
-            continue
-        if isinstance(percent_list, list):
-            if para_list[percent_list_idx] not in percent_list:
-                continue
-        elif percent_list != None and (str(percent_list) != para_list[percent_list_idx]):
+        elif filter_type != None and (filter_type != para_list[filter_type_idx]):
             continue
 
         method_name = '_'.join(para_list[context_type_idx:])
@@ -525,9 +474,12 @@ def get_all_videos_data(file_direc, target_video_list, new_stat, dds_as_gt, \
         cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
         costs_list.extend(cur_costs_list)
         if new_stat:
+            new_stats_path = os.path.join(file_direc, target_video_name, 'new_stats')
+            if os.path.exists(new_stats_path):
+                os.remove(new_stats_path)
             new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
                 dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
-            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            cur_stats_list = read_logs(new_stats_path)
             stats_list.extend(cur_stats_list)
         else:
             cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
@@ -847,13 +799,77 @@ def pareto_line_utils(ax, pair_list, dominate_func, x_idx=0, y_idx=1, choose_met
     paretoPoints, dominatedPoints = simple_cull(pair_list, dominate_func, choose_metric)
     x_list = []
     y_list = []
+    method_list = []
     for single_pareto_point in paretoPoints:
         x_list.append(single_pareto_point[x_idx])
         y_list.append(single_pareto_point[y_idx])
+        if len(single_pareto_point) > 2:
+            method_list.append(single_pareto_point[-1])
     
+    tmp_x_list = x_list[:]
     y_list, x_list = sort_by_second_list(y_list, x_list)
+    method_list, _ = sort_by_second_list(method_list, tmp_x_list)
     if plot_label:
         ax.plot(x_list, y_list, label=plot_label)
     else:
         ax.plot(x_list, y_list)
+    return x_list, y_list, method_list
+
+
+def outliers_proc(data, col_name, scale=3):
+    """
+    用于清洗异常值，默认用 box_plot（scale=3）进行清洗
+    :param data: 接收 pandas 数据格式
+    :param col_name: pandas 列名
+    :param scale: 尺度
+    :return:
+    """
+
+    def box_plot_outliers(data_ser, box_scale):
+        """
+        利用箱线图去除异常值
+        :param data_ser: 接收 pandas.Series 数据格式
+        :param box_scale: 箱线图尺度，
+        :return:
+        """
+        iqr = box_scale * (data_ser.quantile(0.75) - data_ser.quantile(0.25))
+        val_low = data_ser.quantile(0.25) - iqr
+        val_up = data_ser.quantile(0.75) + iqr
+        rule_low = (data_ser < val_low)
+        rule_up = (data_ser > val_up)
+        print(iqr, val_low, val_up)
+        return (rule_low, rule_up), (val_low, val_up)
+
+    data_n = data.copy()
+    data_series = data_n[col_name]
+    rule, value = box_plot_outliers(data_series, box_scale=scale)
+    index = np.arange(data_series.shape[0])[rule[0] | rule[1]]
+    data_n = data_n.drop(index)
+    data_n.reset_index(drop=True, inplace=True)
+    
+    return data_n
+
+
+def filter_all(data, scale=1):
+    all_columns = data.columns
+    for idx, col_name in enumerate(all_columns):
+        data = outliers_proc(data, col_name, scale)
+    return data
+
+
+def area_box_graph(area_dict, graph_title, save_direc=None, save_fname=None):
+    series_dict = {}
+    for area_key, area_list in area_dict.items():
+        series_dict[area_key] = pd.Series(np.array(area_list))
+    df_area = pd.DataFrame(series_dict)
+    df_area = filter_all(df_area)
+    df_area.boxplot(sym='r*')
+    plt.legend(loc='best')
+    plt.title(graph_title)
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+        print(f"save box graph {save_fname} in {save_direc}")
+    # plt.show()
+    plt.close()        
 

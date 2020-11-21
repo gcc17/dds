@@ -9,6 +9,8 @@ def filter_regions_dds(dds_results, cur_req_regions_result, dds_fid, low_images_
     dds_image_path = os.path.join(low_images_path, f"{str(dds_fid).zfill(10)}.png")
     dds_image = cv.imread(dds_image_path, 0)
     filtered_req_regions_result = Results()
+    infer_regions_list = filter_true_regions(
+        dds_results.regions_dict[dds_fid], confid_thresh, max_object_size)
 
     for fid in cur_req_regions_result.regions_dict.keys():
         regions_image_path = os.path.join(low_images_path, f"{str(fid).zfill(10)}.png")
@@ -26,7 +28,7 @@ def filter_regions_dds(dds_results, cur_req_regions_result, dds_fid, low_images_
             res = cv.matchTemplate(dds_image, single_region_image, template_method)
             min_val, max_val, min_loc, max_loc = cv.minMaxLoc(res)
             if template_method in [cv.TM_SQDIFF, cv.TM_SQDIFF_NORMED]:
-                match_val = min_val
+                match_val = 1 - min_val
                 # match_loc[0]: w, match_loc[1]: h
                 match_loc = min_loc
             else:
@@ -41,12 +43,11 @@ def filter_regions_dds(dds_results, cur_req_regions_result, dds_fid, low_images_
                 single_region.w, single_region.h, 
                 single_region.conf, single_region.label, single_region.resolution)
             # check if match location has detection box
-            infer_regions_list = filter_true_regions(
-                dds_results.regions_dict[dds_fid], confid_thresh, max_object_size)
             for infer_region in infer_regions_list:
                 match_iou = region_iou(infer_region, match_region)
                 if match_iou > filter_iou:
                     filtered_req_regions_result.append(single_region)
+                    break
     
     return filtered_req_regions_result
 

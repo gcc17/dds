@@ -6,8 +6,10 @@ from backend.server import Server
 from frontend.client import Client
 from dds_utils import (ServerConfig, read_results_dict, Results, merge_boxes_in_results,
                        evaluate, write_stats)
-from reduce_Bcost.streamB_infer import (analyze_dds_filtered)
+from reduce_Bcost.streamB_infer import (analyze_dds_filtered, analyze_dds_filtered_resize, 
+                        analyze_low_guide)
 from reduce_Bcost.streamB_utils import (draw_region_rectangle)
+from reduce_Bcost.resize_regions import (test_for_efficiency)
 import ipdb
 import shutil
 import sys
@@ -45,13 +47,28 @@ def main(args):
             for region_item in region_list:
                 req_regions_result.append(region_item)
 
-        results, bw = analyze_dds_filtered(
-            server, args.video_name, req_regions_result, args.low_results_path,  
-            args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
-            args.intersect_iou, args.merge_iou, args.filter_method,
-            cleanup=args.cleanup, out_cost_file=args.out_cost_file
-        )
-                
+        if args.resize_method == 'resize_no':
+            results, bw = analyze_dds_filtered(
+                server, args.video_name, req_regions_result, args.low_results_path,  
+                args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
+                args.intersect_iou, args.merge_iou, args.filter_method,
+                cleanup=args.cleanup, out_cost_file=args.out_cost_file
+            )
+        else:
+            resize_max_area = float(args.resize_method.split('_')[1])
+            results, bw = analyze_dds_filtered_resize(
+                server, args.video_name, req_regions_result, args.low_results_path,  
+                args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
+                args.intersect_iou, args.merge_iou, resize_max_area, args.filter_method,
+                cleanup=args.cleanup, out_cost_file=args.out_cost_file
+            )
+            # results, bw = analyze_low_guide(
+            #     server, args.video_name, req_regions_result, args.low_results_path,  
+            #     args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
+            #     args.intersect_iou, args.merge_iou, resize_max_area, args.filter_method,
+            #     cleanup=args.cleanup, out_cost_file=args.out_cost_file
+            # )
+        
     elif args.simulate:
         mode = "simulation"
         # ipdb.set_trace()
@@ -89,8 +106,8 @@ def main(args):
 
         logger.info("Starting client")
         client = Client(args.hname, config, server)
-        results, bw = client.analyze_video_mpeg(
-            args.video_name, args.high_images_path, args.enforce_iframes,
+        results, bw = client.analyze_video_merged_mpeg(
+            args.video_name, args.high_images_path, args.enforce_iframes, args.single_frame_cnt,
             out_cost_file=args.out_cost_file)
     elif not args.simulate and args.hname:
         mode = "implementation"

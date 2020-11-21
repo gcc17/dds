@@ -295,10 +295,12 @@ def simple_merge(single_result_frame, index_to_merge):
             np.array(single_result_frame)[i2np], key=lambda x: x.x + x.w)
         bottom = max(
             np.array(single_result_frame)[i2np], key=lambda x: x.y + x.h)
+        high_conf = max(
+            np.array(single_result_frame)[i2np], key=lambda x: x.conf)
 
         fid, x, y, w, h, conf, label, resolution, origin = (
             left.fid, left.x, top.y, right.x + right.w - left.x,
-            bottom.y + bottom.h - top.y, left.conf, left.label,
+            bottom.y + bottom.h - top.y, high_conf.conf, high_conf.label,
             left.resolution, left.origin)
         single_merged_region = Region(fid, x, y, w, h, conf,
                                       label, resolution, origin)
