@@ -295,12 +295,10 @@ def simple_merge(single_result_frame, index_to_merge):
             np.array(single_result_frame)[i2np], key=lambda x: x.x + x.w)
         bottom = max(
             np.array(single_result_frame)[i2np], key=lambda x: x.y + x.h)
-        high_conf = max(
-            np.array(single_result_frame)[i2np], key=lambda x: x.conf)
 
         fid, x, y, w, h, conf, label, resolution, origin = (
             left.fid, left.x, top.y, right.x + right.w - left.x,
-            bottom.y + bottom.h - top.y, high_conf.conf, high_conf.label,
+            bottom.y + bottom.h - top.y, left.conf, left.label,
             left.resolution, left.origin)
         single_merged_region = Region(fid, x, y, w, h, conf,
                                       label, resolution, origin)
@@ -616,7 +614,13 @@ def crop_images(results, vid_name, images_direc, resolution=None):
                 cached_image[0] == region.fid):
             image_path = os.path.join(images_direc,
                                       f"{str(region.fid).zfill(10)}.png")
-            cached_image = (region.fid, cv.imread(image_path))
+            cached_image = [region.fid, cv.imread(image_path)]
+            if resolution:
+                w = int(cached_image[1].shape[1] * resolution)
+                h = int(cached_image[1].shape[0] * resolution)
+                resized_frame = cv.resize(cached_image[1], (w, h), fx=0, fy=0,
+                                        interpolation=cv.INTER_CUBIC)
+                cached_image[1] = resized_frame
 
         # Just move the complete image
         if region.x == 0 and region.y == 0 and region.w == 1 and region.h == 1:
@@ -627,8 +631,8 @@ def crop_images(results, vid_name, images_direc, resolution=None):
         height = cached_image[1].shape[0]
         x0 = int(region.x * width)
         y0 = int(region.y * height)
-        x1 = int((region.w * width) + x0 - 1)
-        y1 = int((region.h * height) + y0 - 1)
+        x1 = int((region.w * width) + x0)
+        y1 = int((region.h * height) + y0)
 
         if region.fid not in cropped_images:
             cropped_images[region.fid] = np.zeros_like(cached_image[1])
@@ -641,12 +645,6 @@ def crop_images(results, vid_name, images_direc, resolution=None):
     frames_count = len(cropped_images)
     frames = sorted(cropped_images.items(), key=lambda e: e[0])
     for idx, (_, frame) in enumerate(frames):
-        if resolution:
-            w = int(frame.shape[1] * resolution)
-            h = int(frame.shape[0] * resolution)
-            im_to_write = cv.resize(frame, (w, h), fx=0, fy=0,
-                                    interpolation=cv.INTER_CUBIC)
-            frame = im_to_write
         cv.imwrite(os.path.join(vid_name, f"{str(idx).zfill(10)}.png"), frame,
                    [cv.IMWRITE_PNG_COMPRESSION, 0])
 

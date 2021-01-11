@@ -7,6 +7,7 @@ from dds_utils import (Results, Region, calc_iou, merge_images,
                        compute_area_of_frame, calc_area, read_results_dict)
 from .object_detector import Detector
 import timeit
+import numpy as np
 
 
 class Server:
@@ -184,7 +185,7 @@ class Server:
         merged_images = merge_images(
             merged_images_direc, low_images_direc, req_regions)
         infer_start = timeit.default_timer()
-        results, _ = self.perform_detection(
+        results, _, _ = self.perform_detection(
             merged_images_direc, self.config.high_resolution, fnames,
             merged_images)
         infer_elapsed = (timeit.default_timer() - infer_start)
@@ -234,7 +235,7 @@ class Server:
         extract_images_from_video("server_temp", req_regions)
         fnames = [f for f in os.listdir("server_temp") if "png" in f]
 
-        results, rpn = self.perform_detection(
+        results, rpn, _ = self.perform_detection(
             "server_temp", self.config.low_resolution, fnames)
 
         batch_results = Results()
@@ -293,3 +294,32 @@ class Server:
             "results": results_list,
             "req_region": []
         }
+
+    def perform_non_max_suppression(self, req_regions, max_output_size=100, iou_threshold=0.7):
+        compressed_req_regions = Results()
+        for fid, regions_list in req_regions.regions_dict.items():
+            region_cnt = len(regions_list)
+            boxes = np.empty(shape=[region_cnt, 4])
+            scores = np.empty(shape=[region_cnt, ])
+            for idx, single_region in enumerate(regions_list):
+                x0 = single_region.x
+                x1 = single_region.x + single_region.w
+                y0 = single_region.y
+                y1 = single_region.y + single_region.h
+                boxes[idx,0] = y0
+                boxes[idx,1] = x0
+                boxes[idx,2] = y1
+                boxes[idx,3] = x1
+                scores[idx] = single_region.conf
+            selected_boxes, selected_scores = self.detector.non_max_suppression_v2_wrapper(
+                boxes, scores, max_output_size, iou_threshold)
+            
+            for idx, selected_box in enumerate(selected_boxes):
+                x = selected_box[1]
+                y = selected_box[0]
+                w = selected_box[3] - selected_box[1]
+                h = selected_box[2] - selected_box[0]
+                conf = selected_scores[idx]
+                compressed_req_regions.append(Region(fid, x, y, w, h, conf, "object", 1.0))
+        
+        return compressed_req_regions

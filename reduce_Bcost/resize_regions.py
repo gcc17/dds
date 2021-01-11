@@ -54,7 +54,7 @@ def test_for_efficiency(target_region_path, src_image_w, src_image_h, \
         shift_images[b] = shift_image
         cv.imwrite(shift_image_path, shift_image, [cv.IMWRITE_PNG_COMPRESSION, 0])
     
-    final_results, rpn_regions = \
+    final_results, rpn_regions, _ = \
         server.perform_detection(None, 0.8, fnames=fnames, images=shift_images)
     draw_region_rectangle(save_images_direc, fnames, final_results.regions_dict, 
         f'{save_images_direc}-vis', display_result=True)

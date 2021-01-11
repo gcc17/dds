@@ -51,3 +51,26 @@ def filter_regions_dds(dds_results, cur_req_regions_result, dds_fid, low_images_
     
     return filtered_req_regions_result
 
+
+def get_filtered_req_regions(batch_high_phase_results, batch_req_regions, start_fid, 
+        low_images_path, match_thresh=0.9, filter_iou=0.0, template_method=cv.TM_CCOEFF_NORMED, 
+        confid_thresh=0.5, max_object_size=0.3):
+    dds_results = Results()
+    req_regions_result = Results()
+    
+    for fid, regions_list in batch_req_regions.regions_dict.items():
+        if fid == start_fid:
+            continue
+        for req_region in regions_list:
+            req_regions_result.append(req_region)
+    if start_fid not in batch_high_phase_results.regions_dict.keys():
+        return req_regions_result, dds_results
+    for dds_region in batch_high_phase_results.regions_dict[start_fid]:
+        dds_results.append(dds_region)
+    
+    filtered_req_regions_result = filter_regions_dds(
+        dds_results, req_regions_result, start_fid, low_images_path, \
+        match_thresh, filter_iou, template_method, confid_thresh, max_object_size
+    )
+    return filtered_req_regions_result, dds_results
+

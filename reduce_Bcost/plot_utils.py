@@ -755,6 +755,9 @@ def simple_cull(inputPoints, dominates, choose_metric=None):
     paretoPoints = set()
     candidateRowNr = 0
     dominatedPoints = set()
+    if len(inputPoints) == 0:
+        print("No input points!")
+        return
     while True:
         candidateRow = inputPoints[candidateRowNr]
         inputPoints.remove(candidateRow)
@@ -795,7 +798,7 @@ def simple_cull(inputPoints, dominates, choose_metric=None):
     return paretoPoints, dominatedPoints
 
 
-def pareto_line_utils(ax, pair_list, dominate_func, x_idx=0, y_idx=1, choose_metric=None, plot_label=False):
+def pareto_line_utils(ax, pair_list, dominate_func, x_idx=0, y_idx=1, choose_metric=None, plot_label=None):
     paretoPoints, dominatedPoints = simple_cull(pair_list, dominate_func, choose_metric)
     x_list = []
     y_list = []
@@ -809,10 +812,11 @@ def pareto_line_utils(ax, pair_list, dominate_func, x_idx=0, y_idx=1, choose_met
     tmp_x_list = x_list[:]
     y_list, x_list = sort_by_second_list(y_list, x_list)
     method_list, _ = sort_by_second_list(method_list, tmp_x_list)
-    if plot_label:
-        ax.plot(x_list, y_list, label=plot_label)
-    else:
-        ax.plot(x_list, y_list)
+    if ax:
+        if plot_label:
+            ax.plot(x_list, y_list, label=plot_label)
+        else:
+            ax.plot(x_list, y_list)
     return x_list, y_list, method_list
 
 

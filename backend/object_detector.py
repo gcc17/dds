@@ -33,6 +33,13 @@ class Detector:
                 od_graph_def.ParseFromString(serialized_graph)
                 tf.import_graph_def(od_graph_def, name='')
             self.session = tf.compat.v1.Session(config=config)
+            # model_fname = "model_op.txt"
+            # with open(model_fname, 'w') as f:
+            #     for op in self.session.graph.get_operations():
+            #         f.write(f"{op.name} ******** {op.outputs}\n")
+            #         for output in op.outputs:
+            #             f.write(f"{output.name} &&&& {output.consumers()}~~~\n")
+            #         f.write("-----------------------------------\n")
 
         self.logger.info("Object detector initialized")
 
@@ -54,6 +61,29 @@ class Detector:
                 if tensor_name in all_tensor_names:
                     tensor_dict[key] = (tf.compat.v1.get_default_graph()
                                         .get_tensor_by_name(tensor_name))
+            my_key_tensor_map = {
+                # "crop_resize_rpn_on_feature_map": "CropAndResize:0",
+                # "concat":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/Concatenate/concat_3:0",
+                # "size":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/SortByField/Size:0",
+                # "shape":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/SortByField/Shape:0",
+                # "before_sort":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/Concatenate/concat_3:0",
+                # "minimum_x":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/Minimum/x:0",
+                # "minimum":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/Minimum:0",
+                "before_nmsv2_rpn_box":
+                "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/ClipToWindow/Gather/Gather:0",
+                "before_nmsv2_rpn_score":
+                "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/ClipToWindow/Gather/Gather_2:0"
+                # "nmsv2_idx":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/non_max_suppression/NonMaxSuppressionV2:0",
+                # "nmsv2_iou":
+                # "BatchMultiClassNonMaxSuppression/map/while/MultiClassNonMaxSuppression/non_max_suppression/iou_threshold:0"
+            }
 
             # FOR RPN intermedia results
             key_tensor_map = {
@@ -74,6 +104,11 @@ class Detector:
                     tensor_dict[tensor_name] = (
                         tf.compat.v1.get_default_graph()
                         .get_tensor_by_name(tensor_name))
+            for key, tensor_name in my_key_tensor_map.items():
+                if tensor_name in all_tensor_names:
+                    tensor_dict[tensor_name] = (
+                        tf.compat.v1.get_default_graph()
+                        .get_tensor_by_name(tensor_name))
 
             image_tensor = (tf.compat.v1.get_default_graph()
                             .get_tensor_by_name('image_tensor:0'))
@@ -81,6 +116,18 @@ class Detector:
             feed_dict = {image_tensor: np.expand_dims(image, 0)}
             output_dict = self.session.run(tensor_dict,
                                            feed_dict=feed_dict)
+            # for key, tensor_name in my_key_tensor_map.items():
+            #     if tensor_name in output_dict.keys():
+            #         print(tensor_name, output_dict[tensor_name].shape)
+            # import ipdb; ipdb.set_trace()
+            # all_boxes = output_dict[my_key_tensor_map["before_nmsv2"]]
+            # idx_list = list(output_dict[my_key_tensor_map["nmsv2_idx"]])
+            # for i in range(len(idx_list)):
+            #     print(all_boxes[idx_list[i]])
+            # print("---------------------------")
+            # picked_rpn_cnt = output_dict[key_tensor_map['RPN_box_no_normalized']].shape[0]
+            # for i in range(picked_rpn_cnt):
+            #     print(output_dict[key_tensor_map['RPN_box_no_normalized']][i])
 
             # FOR RPN intermedia results
             w = output_dict[key_tensor_map['Resized_shape']][1]
@@ -89,6 +136,10 @@ class Detector:
             output_dict['RPN_box_normalized'] = output_dict[key_tensor_map[
                 'RPN_box_no_normalized']]/input_shape_array[np.newaxis, :]
             output_dict['RPN_score'] = output_dict[key_tensor_map['RPN_score']]
+            output_dict['before_nmsv2_rpn_box_normalizied'] = output_dict[my_key_tensor_map[
+                'before_nmsv2_rpn_box']]/input_shape_array[np.newaxis, :]
+            output_dict['before_nmsv2_rpn_score'] = output_dict[my_key_tensor_map['before_nmsv2_rpn_score']]
+            # import ipdb; ipdb.set_trace()
 
             # FOR RCNN final layer results
             # all outputs are float32 numpy arrays,
@@ -104,11 +155,11 @@ class Detector:
         return output_dict
 
     def infer(self, image_np):
-        imgae_crops = image_np
+        image_crops = image_np
 
         # this output_dict contains both final layer results and RPN results
         output_dict = self.run_inference_for_single_image(
-            imgae_crops, self.d_graph)
+            image_crops, self.d_graph)
 
         # The results array will have (class, (xmin, xmax, ymin, ymax)) tuples
         results = []
@@ -131,19 +182,40 @@ class Detector:
         # Get RPN regions along with classification results
         # rpn results array will have (class, (xmin, xmax, ymin, ymax)) typles
         results_rpn = []
-        all_rpn = []
         for idx_region, region in enumerate(output_dict['RPN_box_normalized']):
             x = region[1]
             y = region[0]
             w = region[3] - region[1]
             h = region[2] - region[0]
             conf = output_dict['RPN_score'][idx_region]
-            if w*h == 0.0:
-                continue
-            print(x, y, w, h, conf)
-            all_rpn.append(("object", conf, (x, y, w, h)))
+            # if conf < Detector.rpn_threshold:
+            #     print(x, y, w, h, conf)
             if conf < Detector.rpn_threshold or w * h == 0.0 or w * h > 0.04:
                 continue
             results_rpn.append(("object", conf, (x, y, w, h)))
+        
+        # Get all RPN regions before NonMaxSuppressionV2
+        all_rpn = []
+        for idx_region, region in enumerate(output_dict['before_nmsv2_rpn_box_normalizied']):
+            x = region[1]
+            y = region[0]
+            w = region[3] - region[1]
+            h = region[2] - region[0]
+            conf = output_dict['before_nmsv2_rpn_score'][idx_region]
+            if w * h == 0.0 or w * h > 0.0025 or conf < 0.0:
+                continue
+            all_rpn.append(("object", conf, (x, y, w, h)))
+        #     print(x, y, w, h, conf)
+        # import ipdb; ipdb.set_trace()
 
         return results, results_rpn, all_rpn
+
+    def non_max_suppression_v2_wrapper(self, boxes, scores, max_output_size=100, iou_threshold=0.7):
+        with tf.compat.v1.Session() as sess:
+            selected_indices = sess.run( tf.image.non_max_suppression(
+                boxes, scores, max_output_size, iou_threshold)
+            )
+            selected_boxes = sess.run( tf.gather(boxes, selected_indices) )
+            selected_scores = sess.run( tf.gather(scores, selected_indices) )
+        return selected_boxes, selected_scores
+

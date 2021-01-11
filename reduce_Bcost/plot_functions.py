@@ -1235,7 +1235,7 @@ def compare_inter_iou(file_direc, target_video_list, stats_metric='F1', costs_me
 
 
 def pareto_all_methods(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
-        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, compare_cost=True,
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, fig_title=None, compare_cost=True,
         context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
         inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
         context_type=None, blank_type=None, merge_iou=None, inter_iou=None):
@@ -1264,9 +1264,11 @@ def pareto_all_methods(file_direc, target_video_list, stats_metric='F1', costs_m
             stats_list.extend(cur_stats_list)
     
     stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
-        target_video_name=target_video_list)
+        target_video_name=target_video_list, context_type=context_type, blank_type=blank_type, 
+        merge_iou=merge_iou, inter_iou=inter_iou)
     costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
-        target_video_name=target_video_list)
+        target_video_name=target_video_list, context_type=context_type, blank_type=blank_type, 
+        merge_iou=merge_iou, inter_iou=inter_iou)
     texts = []
     
     # baseline points
@@ -1283,27 +1285,9 @@ def pareto_all_methods(file_direc, target_video_list, stats_metric='F1', costs_m
         method_mean_cost = np.mean(list(method_result_dict.values()))
         if compare_cost and (method_mean_cost > dds_mean_cost):
             continue
-        if isinstance(context_type, list):
-            if method_name_list[context_type_idx] not in context_type:
-                continue
-        elif context_type and (context_type != method_name_list[context_type_idx]):
-            continue
-        if isinstance(blank_type, list):
-            if method_name_list[blank_type_idx] not in blank_type:
-                continue
-        elif blank_type and (blank_type != method_name_list[blank_type_idx]):
-            continue
-        if isinstance(merge_iou, list):
-            if float(method_name_list[merge_iou_idx]) not in merge_iou:
-                continue
-        elif merge_iou != None and (merge_iou != float(method_name_list[merge_iou_idx])):
-            continue
-        if isinstance(inter_iou, list):
-            if float(method_name_list[inter_iou_idx]) not in inter_iou:
-                continue
-        elif inter_iou != None and (inter_iou != float(method_name_list[inter_iou_idx])):
-            continue
-        new_method_list = method_name_list[context_type_idx:merge_iou_idx+1]
+        new_method_list = method_name_list[context_type_idx:blank_val_idx+1]
+        # new_method_list.append(method_name_list[inter_iou_idx])
+        # new_method_list.append(method_name_list[merge_iou_idx])
         new_method_list.append(method_name_list[resize_val_idx])
         new_method_list.append(method_name_list[filter_type_idx])
         new_method_name = '_'.join(new_method_list)
@@ -1319,7 +1303,10 @@ def pareto_all_methods(file_direc, target_video_list, stats_metric='F1', costs_m
         texts.append(plt.text(x_list[i], y_list[i], method_list[i], fontsize='x-small'))
     
     adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
-    ax.set_title('methods pareto line')
+    if fig_title:
+        ax.set_title(fig_title)
+    else:
+        ax.set_title('methods pareto line')
     ax.set_ylabel(f'{stats_metric}')
     ax.set_xlabel(f'{costs_metric}')
     if save_direc and save_fname:
@@ -1425,6 +1412,393 @@ def more_cost_method(file_direc, target_video_list, stats_metric='F1', costs_met
         method_name_list = method_name.split('_')
         method_mean_cost = np.mean(list(method_result_dict.values()))
         method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
-        if method_mean_cost > dds_mean_cost:
+        if method_mean_cost <= dds_mean_cost:
             print(method_name, method_mean_cost, method_mean_stat)
 
+
+def add_trick_one_by_one(file_direc, target_video_list, stats_metric='F1', costs_metric='frame-count', 
+        new_stat=False, dds_as_gt=False, save_direc=None, save_fname=None, compare_cost=True,
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        context_type=None, context_val=None, blank_type=None, blank_val=None,
+        merge_iou=None, inter_iou=None, resize_val="0.005", filter_type="dds"):
+    
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+
+    fig = plt.figure()
+    ax = fig.add_axes([0.1, 0.1, 0.7, 0.8])
+
+    stats_list = []
+    costs_list = []
+    new_stats_dict = {}
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        if new_stat:
+            new_evaluate_all(os.path.join(file_direc, target_video_name), video_name=target_video_name, \
+                dds_as_gt=dds_as_gt, stats_metric=stats_metric, new_stats_dict=new_stats_dict)
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'new_stats'))
+            stats_list.extend(cur_stats_list)
+        else:
+            cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+            stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou)
+    no_trick_stats, _ = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list, 
+        context_type="whole", context_val=0.0, blank_type="whole", blank_val=0.0, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val="no", filter_type="False")
+    no_trick_costs, _ = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list, 
+        context_type="whole", context_val=0.0, blank_type="whole", blank_val=0.0, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val="no", filter_type="False")
+    texts = []
+    
+    # baseline points
+    for method_name, method_result_dict in costs_baseline_result_dict.items():
+        baseline_mean_cost = np.mean(list(method_result_dict.values()))
+        baseline_mean_stat = np.mean(list(stats_baseline_result_dict[method_name].values()))
+        ax.scatter(baseline_mean_cost, baseline_mean_stat)
+        texts.append(plt.text(baseline_mean_cost, baseline_mean_stat, method_name))
+    dds_mean_cost = np.mean(list(costs_baseline_result_dict['dds'].values()))
+
+    # no trick points
+    print(no_trick_costs.keys())
+    for method_name, method_result_dict in no_trick_costs.items():
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        method_mean_stat = np.mean(list(no_trick_stats[method_name].values()))
+        ax.scatter(method_mean_cost, method_mean_stat)
+        texts.append(plt.text(method_mean_cost, method_mean_stat, "no trick"))
+    
+    # Add trick one by one
+    print(costs_result_dict.keys())
+    for method_name, method_result_dict in costs_result_dict.items():
+        method_name_list = method_name.split("_")
+        method_mean_cost = np.mean(list(method_result_dict.values()))
+        method_mean_stat = np.mean(list(stats_result_dict[method_name].values()))
+        if method_name_list[resize_val_idx] == "no" and \
+            method_name_list[filter_type_idx] == "False":
+            ax.scatter(method_mean_cost, method_mean_stat)
+            texts.append(plt.text(method_mean_cost, method_mean_stat, "only_pad"))
+        if method_name_list[resize_val_idx] == resize_val and \
+            method_name_list[filter_type_idx] == "False":
+            ax.scatter(method_mean_cost, method_mean_stat)
+            texts.append(plt.text(method_mean_cost, method_mean_stat, "pad_resize"))
+        if method_name_list[resize_val_idx] == resize_val and \
+            method_name_list[filter_type_idx] == filter_type:
+            print(method_name)
+            ax.scatter(method_mean_cost, method_mean_stat)
+            texts.append(plt.text(method_mean_cost, method_mean_stat, "pad_resize_filter"))
+    
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="->", color='r', lw=0.5))
+    ax.set_title("tricks point")
+    ax.set_ylabel(f'{stats_metric}')
+    ax.set_xlabel(f'{costs_metric}')
+    if save_direc and save_fname:
+        os.makedirs(save_direc, exist_ok=True)
+        plt.savefig(os.path.join(save_direc, save_fname))
+    else:
+        plt.show()
+    plt.close()    
+
+
+def get_top_stats(file_direc, target_video_list, top_stats_count, 
+        stats_metric='F1', costs_metric='frame-count', 
+        save_direc=None, save_fname=None, 
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        context_type=None, context_val=None, blank_type=None, blank_val=None,
+        merge_iou=None, inter_iou=None, resize_val=None, filter_type=None):
+
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+    
+    stats_list = []
+    costs_list = []
+
+    for target_video_name in target_video_list:
+        # cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        # costs_list.extend(cur_costs_list)
+        cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+        stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+    # costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+    #     target_video_name=target_video_list, 
+    #     context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+    #     merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+
+    top_stats_method_dict = {}
+    top_stats_dict = {}
+    for target_video_name in target_video_list:
+        top_stats_method_dict[target_video_name] = []
+        top_stats_dict[target_video_name] = []
+    for method_name, method_result_dict in stats_result_dict.items():
+        for target_video_name in target_video_list:
+            if target_video_name in method_result_dict.keys():
+                top_stats_method_dict[target_video_name].append(method_name)
+                top_stats_dict[target_video_name].append(method_result_dict[target_video_name])
+    
+    # Sort method stats for each video
+    for target_video_name in target_video_list:
+        cur_method_list = top_stats_method_dict[target_video_name]
+        cur_stats_list = top_stats_dict[target_video_name]
+        cur_method_list, cur_stats_list = \
+            sort_by_second_list(cur_method_list, cur_stats_list)
+        selected_method_count = min(len(cur_method_list), top_stats_count)
+        if choose_metric == "max":
+            cur_method_list = cur_method_list[::-1]
+            cur_stats_list = cur_stats_list[::-1]
+        top_stats_method_dict[target_video_name] = cur_method_list[0:selected_method_count]
+        top_stats_dict[target_video_name] = cur_stats_list[0:selected_method_count]
+        print(target_video_name)
+        print(top_stats_method_dict[target_video_name])
+        print(top_stats_dict[target_video_name])
+    
+    return top_stats_method_dict, top_stats_dict
+        
+
+def get_top_stats_costs_ratio(file_direc, target_video_list, top_ratio_count, 
+        stats_metric='F1', costs_metric='frame-count', 
+        save_direc=None, save_fname=None, low_qp=36, 
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        context_type=None, context_val=None, blank_type=None, blank_val=None,
+        merge_iou=None, inter_iou=None, resize_val=None, filter_type=None):
+
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+    
+    stats_list = []
+    costs_list = []
+
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+        stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+    
+    low_stats_dict = {}
+    for method_name, method_result_dict in stats_baseline_result_dict.items():
+        if str(low_qp) in method_name:
+            print(method_name)
+            for target_video_name in target_video_list:
+                low_stats_dict[target_video_name] = method_result_dict[target_video_name]
+    dds_stats_dict = {}
+    for target_video_name in target_video_list:
+        dds_stats_dict[target_video_name] = stats_baseline_result_dict['dds'][target_video_name]
+    print(dds_stats_dict)
+
+    top_ratio_method_dict = {}
+    top_ratio_dict = {}
+    top_stats_dict = {}
+    top_costs_dict = {}
+    for target_video_name in target_video_list:
+        top_ratio_method_dict[target_video_name] = []
+        top_ratio_dict[target_video_name] = []
+        top_stats_dict[target_video_name] = []
+        top_costs_dict[target_video_name] = []
+    for method_name, method_result_dict in stats_result_dict.items():
+        for target_video_name in target_video_list:
+            if target_video_name in method_result_dict.keys():
+                cur_stat = method_result_dict[target_video_name]
+                if cur_stat < dds_stats_dict[target_video_name]:
+                    continue
+                top_ratio_method_dict[target_video_name].append(method_name)
+                top_stats_dict[target_video_name].append(cur_stat)
+                cur_stat -= low_stats_dict[target_video_name]
+                cur_cost = costs_result_dict[method_name][target_video_name]
+                top_costs_dict[target_video_name].append(cur_cost)
+                top_ratio_dict[target_video_name].append(cur_stat / cur_cost)
+    
+    # Sort method ratio for each video
+    for target_video_name in target_video_list:
+        cur_method_list = top_ratio_method_dict[target_video_name]
+        cur_ratio_list = top_ratio_dict[target_video_name]
+        cur_stats_list = top_stats_dict[target_video_name]
+        cur_costs_list = top_costs_dict[target_video_name]
+
+        tmp_ratio_list = cur_ratio_list[:]
+        cur_method_list, _ = \
+            sort_by_second_list(cur_method_list, tmp_ratio_list)
+        tmp_ratio_list = cur_ratio_list[:]
+        cur_stats_list, _ = \
+            sort_by_second_list(cur_stats_list, tmp_ratio_list)
+        cur_costs_list, cur_ratio_list = \
+            sort_by_second_list(cur_costs_list, cur_ratio_list)
+
+        selected_method_count = min(len(cur_method_list), top_ratio_count)
+        if choose_metric == "max":
+            cur_method_list = cur_method_list[::-1]
+            cur_ratio_list = cur_ratio_list[::-1]
+            cur_stats_list = cur_stats_list[::-1]
+            cur_costs_list = cur_costs_list[::-1]
+        top_ratio_method_dict[target_video_name] = cur_method_list[0:selected_method_count]
+        top_ratio_dict[target_video_name] = cur_ratio_list[0:selected_method_count]
+        top_stats_dict[target_video_name] = cur_stats_list[0:selected_method_count]
+        top_costs_dict[target_video_name] = cur_costs_list[0:selected_method_count]
+
+        print(target_video_name)
+        print(top_ratio_method_dict[target_video_name])
+        print(top_ratio_dict[target_video_name])
+        print(top_stats_dict[target_video_name])
+        print(top_costs_dict[target_video_name])
+    return top_ratio_method_dict, top_ratio_dict
+
+
+def get_top_stats_ratio(file_direc, target_video_list, top_stats_count, top_ratio_count, 
+        stats_metric='F1', costs_metric='frame-count', 
+        save_direc=None, save_fname=None, low_qp=36, 
+        context_type_idx=0, context_val_idx=1, blank_type_idx=2, blank_val_idx=3, 
+        inter_iou_idx=5, merge_iou_idx=7, resize_val_idx=9, filter_type_idx=11, 
+        context_type=None, context_val=None, blank_type=None, blank_val=None,
+        merge_iou=None, inter_iou=None, resize_val=None, filter_type=None):
+
+    if stats_metric in ['F1', 'TP']:
+        choose_metric = 'max'
+    elif stats_metric in ['FP', 'FN']:
+        choose_metric = 'min'
+    
+    stats_list = []
+    costs_list = []
+
+    for target_video_name in target_video_list:
+        cur_costs_list = read_logs(os.path.join(file_direc, target_video_name, 'costs'))
+        costs_list.extend(cur_costs_list)
+        cur_stats_list = read_logs(os.path.join(file_direc, target_video_name, 'stats'))
+        stats_list.extend(cur_stats_list)
+    
+    stats_result_dict, stats_baseline_result_dict = pick_list_item(stats_list, stats_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+    costs_result_dict, costs_baseline_result_dict = pick_list_item(costs_list, costs_metric,
+        target_video_name=target_video_list, 
+        context_type=context_type, context_val=context_val, blank_type=blank_type, blank_val=blank_val, 
+        merge_iou=merge_iou, inter_iou=inter_iou, resize_val=resize_val, filter_type=filter_type)
+    
+    low_stats_dict = {}
+    # for method_name, method_result_dict in stats_baseline_result_dict.items():
+    #     if str(low_qp) in method_name:
+    #         print(method_name)
+    #         for target_video_name in target_video_list:
+    #             low_stats_dict[target_video_name] = method_result_dict[target_video_name]
+
+    top_ratio_method_dict = {}
+    top_ratio_dict = {}
+    top_stats_dict = {}
+    top_costs_dict = {}
+    for target_video_name in target_video_list:
+        top_ratio_method_dict[target_video_name] = []
+        top_ratio_dict[target_video_name] = []
+        top_stats_dict[target_video_name] = []
+        top_costs_dict[target_video_name] = []
+    for method_name, method_result_dict in stats_result_dict.items():
+        for target_video_name in target_video_list:
+            if target_video_name in method_result_dict.keys():
+                cur_stat = method_result_dict[target_video_name]
+                if cur_stat < low_stats_dict[target_video_name]:
+                    continue
+                top_ratio_method_dict[target_video_name].append(method_name)
+                top_stats_dict[target_video_name].append(cur_stat)
+                cur_stat -= low_stats_dict[target_video_name]
+                cur_cost = costs_result_dict[method_name][target_video_name]
+                top_costs_dict[target_video_name].append(cur_cost)
+                top_ratio_dict[target_video_name].append(cur_stat / cur_cost)
+    
+    # First select top stats
+    for target_video_name in target_video_list:
+        cur_method_list = top_ratio_method_dict[target_video_name]
+        cur_ratio_list = top_ratio_dict[target_video_name]
+        cur_stats_list = top_stats_dict[target_video_name]
+        cur_costs_list = top_costs_dict[target_video_name]
+
+        tmp_stats_list = cur_stats_list[:]
+        cur_method_list, _ = \
+            sort_by_second_list(cur_method_list, tmp_stats_list)
+        tmp_stats_list = cur_stats_list[:]
+        cur_ratio_list, _ = \
+            sort_by_second_list(cur_ratio_list, tmp_stats_list)
+        cur_costs_list, cur_stats_list = \
+            sort_by_second_list(cur_costs_list, cur_stats_list)
+        
+        selected_method_count = min(len(cur_method_list), top_stats_count)
+        if choose_metric == "max":
+            cur_method_list = cur_method_list[::-1]
+            cur_ratio_list = cur_ratio_list[::-1]
+            cur_stats_list = cur_stats_list[::-1]
+            cur_costs_list = cur_costs_list[::-1]
+        top_ratio_method_dict[target_video_name] = cur_method_list[0:selected_method_count]
+        top_ratio_dict[target_video_name] = cur_ratio_list[0:selected_method_count]
+        top_stats_dict[target_video_name] = cur_stats_list[0:selected_method_count]
+        top_costs_dict[target_video_name] = cur_costs_list[0:selected_method_count]
+    
+    # Then select top ratio ratio
+    for target_video_name in target_video_list:
+        cur_method_list = top_ratio_method_dict[target_video_name]
+        cur_ratio_list = top_ratio_dict[target_video_name]
+        cur_stats_list = top_stats_dict[target_video_name]
+        cur_costs_list = top_costs_dict[target_video_name]
+
+        tmp_ratio_list = cur_ratio_list[:]
+        cur_method_list, _ = \
+            sort_by_second_list(cur_method_list, tmp_ratio_list)
+        tmp_ratio_list = cur_ratio_list[:]
+        cur_stats_list, _ = \
+            sort_by_second_list(cur_stats_list, tmp_ratio_list)
+        cur_costs_list, cur_ratio_list = \
+            sort_by_second_list(cur_costs_list, cur_ratio_list)
+
+        selected_method_count = min(len(cur_method_list), top_ratio_count)
+        if choose_metric == "max":
+            cur_method_list = cur_method_list[::-1]
+            cur_ratio_list = cur_ratio_list[::-1]
+            cur_stats_list = cur_stats_list[::-1]
+            cur_costs_list = cur_costs_list[::-1]
+        top_ratio_method_dict[target_video_name] = cur_method_list[0:selected_method_count]
+        top_ratio_dict[target_video_name] = cur_ratio_list[0:selected_method_count]
+        top_stats_dict[target_video_name] = cur_stats_list[0:selected_method_count]
+        top_costs_dict[target_video_name] = cur_costs_list[0:selected_method_count]
+
+        print(target_video_name)
+        print(top_ratio_method_dict[target_video_name])
+        print(top_ratio_dict[target_video_name])
+        print(top_stats_dict[target_video_name])
+        print(top_costs_dict[target_video_name])
+
+
+def get_method_rank(target_video_list, top_method_dict, top_metric_dict=None):
+    overall_method_rank = {}
+    for target_video_name in target_video_list:
+        for top_method in top_method_dict[target_video_name]:
+            if top_method not in overall_method_rank.keys():
+                overall_method_rank[top_method] = 0
+            overall_method_rank[top_method] += 1
+    sorted_method_rank = sorted(overall_method_rank.items(), key = lambda x:x[1], reverse = True)
+    print(sorted_method_rank)

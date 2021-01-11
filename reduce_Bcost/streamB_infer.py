@@ -19,7 +19,7 @@ import timeit
 
 
 def analyze_dds_filtered(
-        server, video_name, req_regions_result, low_results_path,
+        server, video_name, req_regions_result, filtered_req_regions_result, low_results_path,
         context_padding_type, context_val, blank_padding_type, blank_val,
         intersect_iou, merge_iou, filter_by_dds,
         cleanup, out_cost_file=None
@@ -59,9 +59,14 @@ def analyze_dds_filtered(
 
         cur_req_regions_result = Results()
         for fid in range(req_start_fid, end_fid):
-            if fid in req_regions_result.regions_dict.keys():
-                for single_region in req_regions_result.regions_dict[fid]:
-                    cur_req_regions_result.append(single_region)
+            if filter_by_dds:
+                if fid in filtered_req_regions_result.regions_dict.keys():
+                    for single_region in filtered_req_regions_result.regions_dict[fid]:
+                        cur_req_regions_result.append(single_region)
+            else:
+                if fid in req_regions_result.regions_dict.keys():
+                    for single_region in req_regions_result.regions_dict[fid]:
+                        cur_req_regions_result.append(single_region)
         # Run dds on the first frame in this batch
         dds_req_regions_result = Results()
         if start_fid in req_regions_result.regions_dict.keys():
@@ -83,11 +88,12 @@ def analyze_dds_filtered(
             base_images_direc, server.config.enforce_iframes, True
         )
         total_size[0] += low_batch_video_size
-        r1, req_regions = server.simulate_low_query(
-            start_fid, end_fid, f"{base_images_direc}-cropped", low_results_dict, False,
-            server.config.rpn_enlarge_ratio)
-        all_restored_results.combine_results(
-            r1, server.config.intersection_threshold)
+        if low_results_path:
+            r1, req_regions = server.simulate_low_query(
+                start_fid, end_fid, f"{base_images_direc}-cropped", low_results_dict, False,
+                server.config.rpn_enlarge_ratio)
+            all_restored_results.combine_results(
+                r1, server.config.intersection_threshold)
 
         # Run dds on the first frame
         if filter_by_dds and len(dds_req_regions_result) > 0:
@@ -112,15 +118,9 @@ def analyze_dds_filtered(
                 server.config.intersection_threshold)
             shutil.rmtree(f'{dds_images_direc}-cropped')
 
-            # Filter req_region in the batch
-            cur_req_regions_result = filter_regions_dds(
-                dds_results, cur_req_regions_result, start_fid,f'{base_images_direc}-cropped',
-                match_thresh=0.9, filter_iou=0.0, 
-                confid_thresh=server.config.prune_score, max_object_size=server.config.max_object_size
-            )
-
         if len(cur_req_regions_result) == 0:
-            print('No requested region in this batch')
+            logger.info('No requested region in this batch')
+            shutil.rmtree(f'{base_images_direc}-cropped')
             continue
         # Merge high-quality req_regions and low-quality frames
         merged_images_direc = f'{batch_images_direc}-merged'
@@ -164,7 +164,7 @@ def analyze_dds_filtered(
 
         # Perform detection
         infer_start = timeit.default_timer()
-        pad_shift_results, rpn_results = server.perform_detection(shift_images_direc, \
+        pad_shift_results, rpn_results, _ = server.perform_detection(shift_images_direc, \
             server.config.high_resolution)
         infer_elapsed = (timeit.default_timer() - infer_start)
         total_infer_time += infer_elapsed
@@ -180,6 +180,14 @@ def analyze_dds_filtered(
             )
         
         if not cleanup:
+            vis_low_req_direc = f"{video_name}-vis_low_req"
+            base_fnames = sorted([f for f in os.listdir(f'{base_images_direc}-cropped') if "png" in f])
+            tmp_direc = f"{video_name}-vis_tmp"
+            draw_region_rectangle(f'{base_images_direc}-cropped', base_fnames, r1.regions_dict, \
+                tmp_direc, display_result=True, rec_side_width=4)
+            draw_region_rectangle(tmp_direc, base_fnames, cur_req_regions_result.regions_dict, \
+                vis_low_req_direc, rec_color=(0,0,255), clean_save=False)
+            shutil.rmtree(tmp_direc)
             vis_pack_direc = f'{video_name}-vis-pack'
             pack_fnames = sorted([f for f in os.listdir(shift_images_direc) if "png" in f])
             draw_region_rectangle(shift_images_direc, pack_fnames, pad_shift_results.regions_dict, 
@@ -226,7 +234,7 @@ def analyze_dds_filtered(
 
 
 def analyze_dds_filtered_resize(
-        server, video_name, req_regions_result, low_results_path,
+        server, video_name, req_regions_result, filtered_req_regions_result, low_results_path,
         context_padding_type, context_val, blank_padding_type, blank_val,
         intersect_iou, merge_iou, resize_max_area, filter_by_dds,
         cleanup, out_cost_file=None
@@ -264,20 +272,26 @@ def analyze_dds_filtered_resize(
         else:
             req_start_fid = start_fid
 
-        # req_regions in the batch except the first frame: small regions need resize
+        # req_regions in the batch except the first frame
+        # small regions need resize and large regions do not
         cur_small_regions_result = Results()
-        for fid in range(req_start_fid, end_fid):
-            if fid in req_regions_result.regions_dict.keys():
-                for single_region in req_regions_result.regions_dict[fid]:
-                    if single_region.w*single_region.h <= resize_max_area:
-                        cur_small_regions_result.append(single_region)
-        # req_regions in the batch except the first frame: large regions no need resize
         cur_large_regions_result = Results()
         for fid in range(req_start_fid, end_fid):
-            if fid in req_regions_result.regions_dict.keys():
-                for single_region in req_regions_result.regions_dict[fid]:
-                    if single_region.w*single_region.h > resize_max_area:
-                        cur_large_regions_result.append(single_region)
+            if filter_by_dds:
+                if fid in filtered_req_regions_result.regions_dict.keys():
+                    for single_region in filtered_req_regions_result.regions_dict[fid]:
+                        if single_region.w*single_region.h <= resize_max_area:
+                            cur_small_regions_result.append(single_region)
+                        else:
+                            cur_large_regions_result.append(single_region)
+
+            else:
+                if fid in req_regions_result.regions_dict.keys():
+                    for single_region in req_regions_result.regions_dict[fid]:
+                        if single_region.w*single_region.h <= resize_max_area:
+                            cur_small_regions_result.append(single_region)
+                        else:
+                            cur_large_regions_result.append(single_region)
         
         # Run dds on the first frame in this batch
         dds_req_regions_result = Results()
@@ -300,11 +314,12 @@ def analyze_dds_filtered_resize(
             base_images_direc, server.config.enforce_iframes, True
         )
         total_size[0] += low_batch_video_size
-        r1, req_regions = server.simulate_low_query(
-            start_fid, end_fid, f"{base_images_direc}-cropped", low_results_dict, False,
-            server.config.rpn_enlarge_ratio)
-        all_restored_results.combine_results(
-            r1, server.config.intersection_threshold)
+        if low_results_path:
+            r1, req_regions = server.simulate_low_query(
+                start_fid, end_fid, f"{base_images_direc}-cropped", low_results_dict, False,
+                server.config.rpn_enlarge_ratio)
+            all_restored_results.combine_results(
+                r1, server.config.intersection_threshold)
 
         # Run dds on the first frame
         if filter_by_dds and len(dds_req_regions_result) > 0:
@@ -329,23 +344,12 @@ def analyze_dds_filtered_resize(
                 server.config.intersection_threshold)
             shutil.rmtree(f'{dds_images_direc}-cropped')
 
-            # Filter req_region in the batch (small and large)
-            cur_small_regions_result = filter_regions_dds(
-                dds_results, cur_small_regions_result, start_fid, f'{base_images_direc}-cropped',
-                match_thresh=0.9, filter_iou=0.0, 
-                confid_thresh=server.config.prune_score, max_object_size=server.config.max_object_size
-            )
-            cur_large_regions_result = filter_regions_dds(
-                dds_results, cur_large_regions_result, start_fid, f'{base_images_direc}-cropped',
-                match_thresh=0.9, filter_iou=0.0, 
-                confid_thresh=server.config.prune_score, max_object_size=server.config.max_object_size
-            )
-
         cur_req_regions_result = Results()
         cur_req_regions_result.combine_results(cur_small_regions_result, 1)
         cur_req_regions_result.combine_results(cur_large_regions_result, 1)
         if len(cur_req_regions_result) == 0:
-            print('No requested region in this batch')
+            logger.info('No requested region in this batch')
+            shutil.rmtree(f'{base_images_direc}-cropped')
             continue
         # Merge high-quality req_regions and low-quality frames
         merged_images_direc = f'{batch_images_direc}-merged'
@@ -403,7 +407,7 @@ def analyze_dds_filtered_resize(
 
         # Perform detection
         infer_start = timeit.default_timer()
-        pad_shift_results, rpn_results = server.perform_detection(shift_images_direc, \
+        pad_shift_results, rpn_results, _ = server.perform_detection(shift_images_direc, \
             server.config.high_resolution)
         infer_elapsed = (timeit.default_timer() - infer_start)
         total_infer_time += infer_elapsed
@@ -612,7 +616,8 @@ def analyze_low_guide(
         cur_req_regions_result.combine_results(cur_large_regions_result, 1)
         
         if len(cur_req_regions_result) == 0:
-            print('No requested region in this batch')
+            logger.info('No requested region in this batch')
+            shutil.rmtree(f'{base_images_direc}-cropped')
             continue
         # Merge high-quality req_regions and low-quality frames
         merged_images_direc = f'{batch_images_direc}-merged'
@@ -704,7 +709,7 @@ def analyze_low_guide(
 
         # Perform detection
         infer_start = timeit.default_timer()
-        pad_shift_results, rpn_results = server.perform_detection(shift_images_direc, \
+        pad_shift_results, rpn_results, _ = server.perform_detection(shift_images_direc, \
             server.config.high_resolution)
         infer_elapsed = (timeit.default_timer() - infer_start)
         total_infer_time += infer_elapsed

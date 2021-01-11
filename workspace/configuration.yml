@@ -27,6 +27,8 @@ default:
   high_results_path: None
   high_resolution: -1
   high_qp: -1
+  low_resolution: -1
+  low_qp: -1
   estimate_banwidth: False
   low_images_path: None
   tracker_length: 4
@@ -56,7 +58,7 @@ default:
   hname: False
   application: semantic_segmentation
   req_regions_fname: False
-  single_frame_cnt: 4
+  reduce_low: False
 #
 # Specify each instance here
 # You could overwrite the default configuration for each instance
@@ -71,11 +73,17 @@ instances:
   low_qp: 24
   # resolution is a number in (0, 1]. We will scale the width and the hight according to this factor.
   low_resolution: 1.0
+  reduce_low: False
+# - method: mpeg
+#   low_qp: 36
+#   low_resolution: 0.8
+#   merged_frame_res: 0.4
 - method: mpeg
   low_qp:
   - 36
   - 26
   low_resolution: 0.8
+  reduce_low: False
 - batch_size: 15
   # the configuration for the Stream A (low) and Stream B (high)
   high_qp: 26
@@ -86,7 +94,16 @@ instances:
   # Deprecated parameter
   rpn_enlarge_ratio: 0.0
 
-# the configuration for the streamB pack: whole-whole
+# the configuration for the streamB pack: no trick
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: onlyObjects
+  region_enlarge_ratio: 1.0
+  cleanup: False
+
+# the configuration for the streamB pack: no trick
 - high_qp: 26
   high_resolution: 0.8
   low_qp: 36
@@ -97,17 +114,14 @@ instances:
   # context padding
   context_padding_type: whole
   context_val:
-    - 0.01
-    - 0.02
-    - 0.03
+    - 0.0
   blank_padding_type: whole
   blank_val:
-    - 0.01
+    - 0.0
   intersect_iou: 
     - 0.2
   merge_iou: 
     - 0.0
-    - 0.5
   cleanup: True
   resize_method:
     - resize_no
@@ -115,6 +129,7 @@ instances:
     - dds
     - False
 
+# Configurations for different padding
 # the configuration for the streamB pack: whole-whole
 - high_qp: 26
   high_resolution: 0.8
@@ -126,15 +141,145 @@ instances:
   # context padding
   context_padding_type: whole
   context_val:
-    - 0.0
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.025
+    - 0.03
+    - 0.04
   blank_padding_type: whole
   blank_val:
+    - 0.01
     - 0.0
   intersect_iou: 
     - 0.2
   merge_iou: 
     - 0.0
+  cleanup: False
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.025
+    - 0.03
+    - 0.04
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.025
+    - 0.03
+    - 0.04
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.025
+    - 0.03
+    - 0.04
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.4
     - 0.5
+    - 0.7
+    - 1.0
+    - 1.2
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
   cleanup: True
   resize_method:
     - resize_no
@@ -154,8 +299,11 @@ instances:
   context_padding_type: region
   context_val:
     - 0.3
+    - 0.4
     - 0.5
+    - 0.7
     - 1.0
+    - 1.2
   blank_padding_type: region
   blank_val:
     - 0.1
@@ -163,7 +311,131 @@ instances:
     - 0.2
   merge_iou: 
     - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.4
     - 0.5
+    - 0.7
+    - 1.0
+    - 1.2
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.7
+    - 1.0
+    - 1.2
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0002
+    - 0.0003
+    - 0.0004
+    - 0.0005
+    - 0.0006
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0002
+    - 0.0003
+    - 0.0004
+    - 0.0005
+    - 0.0006
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
   cleanup: True
   resize_method:
     - resize_no
@@ -182,9 +454,12 @@ instances:
   # context padding
   context_padding_type: inverse
   context_val:
-    - 0.0005
-    - 0.0003
     - 0.0001
+    - 0.0002
+    - 0.0003
+    - 0.0004
+    - 0.0005
+    - 0.0006
   blank_padding_type: inverse
   blank_val:
     - 0.0001
@@ -192,7 +467,37 @@ instances:
     - 0.2
   merge_iou: 
     - 0.0
-    - 0.5
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0002
+    - 0.0003
+    - 0.0004
+    - 0.0005
+    - 0.0006
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
   cleanup: True
   resize_method:
     - resize_no
@@ -211,20 +516,596 @@ instances:
   # context padding
   context_padding_type: pixel
   context_val:
-    - 0.0027
+    - 0.005
+    - 0.007
     - 0.01
+    - 0.015
     - 0.02
+    - 0.03
   blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.007
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.03
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.007
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.03
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_no
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.007
+    - 0.01
+    - 0.015
+    - 0.02
+    - 0.03
+  blank_padding_type: pixel
   blank_val:
     - 0.01
   intersect_iou: 
     - 0.2
   merge_iou: 
     - 0.0
-    - 0.5
   cleanup: True
   resize_method:
     - resize_no
+  filter_method:
+    - dds
+    - False
+
+# Resizing methods: caution for cost
+# the configuration for the streamB pack: no pad
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.0
+  blank_padding_type: whole
+  blank_val:
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.02
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.02
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.02
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: whole-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: whole
+  context_val:
+    - 0.01
+    - 0.02
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.5
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.5
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.5
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: region-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: region
+  context_val:
+    - 0.3
+    - 0.5
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0003
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0003
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0003
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: inverse-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: inverse
+  context_val:
+    - 0.0001
+    - 0.0003
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-whole
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.01
+  blank_padding_type: whole
+  blank_val:
+    - 0.01
+    - 0.0
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-region
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.01
+  blank_padding_type: region
+  blank_val:
+    - 0.1
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-inverse
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.01
+  blank_padding_type: inverse
+  blank_val:
+    - 0.0001
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
+  filter_method:
+    - dds
+    - False
+
+# the configuration for the streamB pack: pixel-pixel
+- high_qp: 26
+  high_resolution: 0.8
+  low_qp: 36
+  low_resolution: 0.8
+  method: streamBpack
+  # Deprecated parameter
+  rpn_enlarge_ratio: 0.0
+  # context padding
+  context_padding_type: pixel
+  context_val:
+    - 0.005
+    - 0.01
+  blank_padding_type: pixel
+  blank_val:
+    - 0.01
+  intersect_iou: 
+    - 0.2
+  merge_iou: 
+    - 0.0
+  cleanup: True
+  resize_method:
+    - resize_0.005
+    - resize_0.001
   filter_method:
     - dds
     - False

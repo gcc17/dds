@@ -5,9 +5,12 @@ import requests
 import json
 from dds_utils import (Results, read_results_dict, cleanup, Region,
                        compute_regions_size, extract_images_from_video,
-                       merge_boxes_in_results, write_compute_cost)
-from reduce_Acost.merge_low_frames import (merge_frames, restore_merged_results)
-from reduce_Bcost.streamB_utils import (draw_region_rectangle)
+                       merge_boxes_in_results, write_compute_cost, calc_iou)
+from reduce_Acost.merge_low_frames import (merge_frames, restore_merged_results, 
+                                merge_frame_change_res, restore_frame_change_res)
+from reduce_Acost.crop_merge_frames import (crop_merge_frames_part)
+from reduce_Bcost.streamB_utils import (draw_region_rectangle, filter_true_regions)
+from reduce_Bcost.filter_regions import (get_filtered_req_regions)
 import ipdb
 import timeit
 
@@ -63,7 +66,7 @@ class Client:
             extract_images_from_video(f"{video_name}-base-phase-cropped",
                                       req_regions)
             infer_start = timeit.default_timer()
-            results, rpn_results = (
+            results, rpn_results, _ = (
                 self.server.perform_detection(
                     f"{video_name}-base-phase-cropped",
                     self.config.low_resolution, batch_fnames))
@@ -112,8 +115,8 @@ class Client:
         return final_results, [total_size, 0]
     
 
-    def analyze_video_merged_mpeg(self, video_name, raw_images_path, enforce_iframes, 
-            single_frame_cnt, out_cost_file=None):
+    def analyze_video_reduced_mpeg(self, video_name, raw_images_path, enforce_iframes, 
+            whole_res, merged_frame_res, out_cost_file=None):
         number_of_frames = len(
             [f for f in os.listdir(raw_images_path) if ".png" in f])
 
@@ -122,93 +125,78 @@ class Client:
         total_size = 0
         total_infer_time = 0
         total_time = 0
+        total_start = timeit.default_timer()
+        total_frame_cnt = 0
         
         for i in range(0, number_of_frames, self.config.batch_size):
             start_frame = i
             end_frame = min(number_of_frames, i + self.config.batch_size)
+            self.logger.info(f"Processing batch from {start_frame} to {end_frame}")
 
             batch_fnames = sorted([f"{str(idx).zfill(10)}.png"
                                    for idx in range(start_frame, end_frame)])
 
+            # Get frames encoded with low_resolution
             req_regions = Results()
             for fid in range(start_frame, end_frame):
                 req_regions.append(
-                    Region(fid, 0, 0, 1, 1, 1.0, 2,
-                           self.config.low_resolution))
+                    Region(fid, 0, 0, 1, 1, 1.0, 2, whole_res))
             batch_video_size, _ = compute_regions_size(
                 req_regions, f"{video_name}-base-phase", raw_images_path,
-                self.config.low_resolution, self.config.low_qp,
+                whole_res, self.config.low_qp,
                 enforce_iframes, True)
             self.logger.info(f"{batch_video_size / 1024}KB sent "
                              f"in base phase using {self.config.low_qp}QP")
             extract_images_from_video(f"{video_name}-base-phase-cropped",
                                       req_regions)
-            save_images_direc = f"{video_name}-merged-base"
-            merge_frames(f"{video_name}-base-phase-cropped", save_images_direc, 
-                        single_frame_cnt)
-            merged_fnames = sorted([f for f in os.listdir(save_images_direc) if "png" in f])
-            infer_start = timeit.default_timer()
-            results, rpn_results, all_rpn_results = (
-                self.server.perform_detection(
-                    save_images_direc,
-                    self.config.low_resolution, merged_fnames))
-            infer_elapsed = (timeit.default_timer() - infer_start)
-            total_infer_time += infer_elapsed
-            
-            low_results = Results()
-            low_results.combine_results(results, 1)
-            low_results.combine_results(rpn_results, self.config.intersection_threshold)
-            detections, filtered_rpn_results = \
-                self.server.simulate_low_query(
-                    0, len(merged_fnames), save_images_direc, low_results.regions_dict, False,
-                    self.config.rpn_enlarge_ratio, False)
+            base_images_direc = f"{video_name}-base-phase-cropped"
 
-            # vis_results_direc = f"{video_name}-restore-vis_results"
-            # draw_region_rectangle(f"{video_name}-base-phase-cropped", batch_fnames, 
-            #     results.regions_dict, vis_results_direc)
-            # vis_reqs_direc = f"{video_name}-restore-vis_reqs"
-            # draw_region_rectangle(f"{video_name}-base-phase-cropped", batch_fnames, 
-            #     rpn_results.regions_dict, vis_reqs_direc)
-            # import ipdb; ipdb.set_trace()
+            # Merge frames into a large one
+            merged_frame_direc = f"{video_name}_merged_direc"
+            merged_maps = merge_frame_change_res(base_images_direc, req_regions.regions, \
+                whole_res, merged_frame_res, whole_res, merged_frame_direc)
+            merged_frame_fnames = sorted([f for f in os.listdir(merged_frame_direc) if "png" in f])
+            total_frame_cnt += len(merged_frame_fnames)
+            merged_results, merged_rpn_results, merged_all_rpn = \
+                self.server.perform_detection(merged_frame_direc, 
+                    whole_res, merged_frame_fnames)
             
-            vis_results_direc = f"{save_images_direc}-vis_results"
-            draw_region_rectangle(save_images_direc, merged_fnames, detections.regions_dict,
-                vis_results_direc)
-            vis_reqs_direc_tmp = f"{save_images_direc}-vis_reqs-tmp"
-            vis_reqs_direc = f"{save_images_direc}-vis_reqs"
-            draw_region_rectangle(save_images_direc, merged_fnames, all_rpn_results.regions_dict, 
-                vis_reqs_direc_tmp, rec_side_width=4)
-            draw_region_rectangle(vis_reqs_direc_tmp, merged_fnames, filtered_rpn_results.regions_dict, 
-                vis_reqs_direc, rec_color=(0,0,255))
-            shutil.rmtree(vis_reqs_direc_tmp)
+            # Restore results
+            restored_merged_results = restore_frame_change_res(merged_results, merged_maps,\
+                # min_area_thresh=self.config.size_obj / ((whole_res/large_object_res)**2) 
+            )
+            final_results.combine_results(restored_merged_results, \
+                self.config.intersection_threshold)
+            vis_merged_res_direc = f"{video_name}_vis_merged_res"
+            draw_region_rectangle(merged_frame_direc, merged_frame_fnames, \
+                merged_results.regions_dict, vis_merged_res_direc)
+            vis_restored_results_direc = f"{video_name}_vis_restored_res"
+            draw_region_rectangle(base_images_direc, batch_fnames, \
+                restored_merged_results.regions_dict, vis_restored_results_direc, clean_save=False)
+            
+            # Select from all rpn
+            restored_merged_all_rpn = restore_frame_change_res(merged_all_rpn, merged_maps, \
+                # min_area_thresh=self.config.size_obj / ((whole_res/large_object_res)**2) 
+            )
+            selected_restored_rpn = self.server.perform_non_max_suppression(
+                restored_merged_all_rpn)
+            final_rpn_results.combine_results(selected_restored_rpn, \
+                self.config.intersection_threshold)
+            # vis_selected_restored_rpn = f"{video_name}-vis_selected_restored_rpn"
+            # draw_region_rectangle(base_images_direc, batch_fnames, \
+            #     selected_restored_rpn.regions_dict, vis_selected_restored_rpn)
+            
+            shutil.rmtree(merged_frame_direc)
             import ipdb; ipdb.set_trace()
 
-            results = restore_merged_results(single_frame_cnt, results, start_frame)
-            rpn_results = restore_merged_results(single_frame_cnt, rpn_results, start_frame)
-
-            self.logger.info(f"Detection {len(results)} regions for "
-                             f"batch {start_frame} to {end_frame} with a "
-                             f"total size of {batch_video_size / 1024}KB")
-            combine_start = timeit.default_timer()
-            final_results.combine_results(
-                results, self.config.intersection_threshold)
-            combine_elapsed = (timeit.default_timer() - combine_start)
-            total_time += combine_elapsed
-            final_rpn_results.combine_results(
-                rpn_results, self.config.intersection_threshold)
-
             # Remove encoded video manually
-            shutil.rmtree(f"{video_name}-base-phase-cropped")
-            shutil.rmtree(save_images_direc)
+            shutil.rmtree(base_images_direc)
             total_size += batch_video_size
         
-        combine_start = timeit.default_timer()
         final_results = merge_boxes_in_results(
             final_results.regions_dict, 
             self.config.low_threshold, self.config.suppression_threshold)
-        combine_elapsed = (timeit.default_timer() - combine_start)
-        total_time += combine_elapsed
-        total_time += total_infer_time
+        
         # final_rpn_results = merge_boxes_in_results(
         #     final_rpn_results.regions_dict, 
         #     -1, self.config.suppression_threshold)
@@ -219,11 +207,238 @@ class Client:
             final_rpn_results, self.config.intersection_threshold)
 
         final_results.write(video_name)
+        total_time = (timeit.default_timer() - total_start)
         self.logger.info(f"Infer time {total_infer_time} for "
-                        f"{number_of_frames} frames, "
+                        f"{total_frame_cnt} frames, "
                         f"total elapsed time {total_time}")
         if out_cost_file:
-            write_compute_cost(out_cost_file, video_name, number_of_frames, 
+            write_compute_cost(out_cost_file, video_name, total_frame_cnt, 
+                0, 0, total_infer_time, total_time)
+
+        return final_results, [total_size, 0]
+        
+    def analyze_video_merged_mpeg(self, video_name, raw_images_path, enforce_iframes, 
+            whole_res, large_object_res, small_object_res,
+            out_cost_file=None, iou_thresh=0.3, max_area_thresh=0.3):
+        number_of_frames = len(
+            [f for f in os.listdir(raw_images_path) if ".png" in f])
+
+        final_results = Results()
+        final_rpn_results = Results()
+        total_size = 0
+        total_infer_time = 0
+        total_time = 0
+        total_start = timeit.default_timer()
+        total_frame_cnt = 0
+        
+        for i in range(0, number_of_frames, self.config.batch_size):
+            start_frame = i
+            end_frame = min(number_of_frames, i + self.config.batch_size)
+            self.logger.info(f"Processing batch from {start_frame} to {end_frame}")
+
+            batch_fnames = sorted([f"{str(idx).zfill(10)}.png"
+                                   for idx in range(start_frame, end_frame)])
+
+            # Get frames encoded with low_resolution
+            req_regions = Results()
+            for fid in range(start_frame, end_frame):
+                req_regions.append(
+                    Region(fid, 0, 0, 1, 1, 1.0, 2, whole_res))
+            batch_video_size, _ = compute_regions_size(
+                req_regions, f"{video_name}-base-phase", raw_images_path,
+                whole_res, self.config.low_qp,
+                enforce_iframes, True)
+            self.logger.info(f"{batch_video_size / 1024}KB sent "
+                             f"in base phase using {self.config.low_qp}QP")
+            extract_images_from_video(f"{video_name}-base-phase-cropped",
+                                      req_regions)
+            base_images_direc = f"{video_name}-base-phase-cropped"
+
+            # Get original results on the first frame
+            first_fname = [f"{str(start_frame).zfill(10)}.png"]
+            total_frame_cnt += len(first_fname)
+            ori_first_results, ori_first_rpn_results, _ = \
+                self.server.perform_detection(base_images_direc, 
+                    whole_res, first_fname)
+            # Get repeated results on the first frame
+            repeat_first_times = int((whole_res // large_object_res) ** 2)
+            first_region = Region(start_frame, 0, 0, 1, 1, 1.0, 2, whole_res)
+            first_region_list = []
+            for i in range(repeat_first_times):
+                first_region_list.append(first_region)
+            repeat_first_direc = f"{video_name}-first_merged"
+            first_frame_merged_maps = merge_frame_change_res(
+                base_images_direc, first_region_list, whole_res, large_object_res, whole_res,
+                repeat_first_direc
+            )
+            repeat_first_fname = sorted([f for f in os.listdir(repeat_first_direc) if "png" in f])
+            total_frame_cnt += len(repeat_first_fname)
+            repeat_first_results, repeat_first_rpn_result, _ = \
+                self.server.perform_detection(repeat_first_direc, 
+                    whole_res, repeat_first_fname)
+            # vis_merged_res_direc = f"{video_name}-vis_merged_res"
+            # vis_merged_rpn_direc = f"{video_name}-vis_merged_rpn"
+            # draw_region_rectangle(repeat_first_direc, repeat_first_fname, \
+            #     repeat_first_results.regions_dict, vis_merged_res_direc)
+            # draw_region_rectangle(repeat_first_direc, repeat_first_fname, \
+            #     repeat_first_rpn_result.regions_dict, vis_merged_rpn_direc)
+            shutil.rmtree(repeat_first_direc)
+
+            # Restore repeated results
+            first_frame_merged_maps[0] = [first_frame_merged_maps[0][0]]
+            restored_repeat_first_results = restore_frame_change_res(
+                repeat_first_results, first_frame_merged_maps)
+            restored_repeat_first_rpn_results = restore_frame_change_res(
+                repeat_first_rpn_result, first_frame_merged_maps)
+            # vis_res_direc = f"{video_name}-vis_res"
+            # vis_rpn_direc = f"{video_name}-vis_rpn"
+            # draw_region_rectangle(base_images_direc, first_fname, \
+            #     restored_repeat_first_results.regions_dict, vis_res_direc)
+            # draw_region_rectangle(base_images_direc, first_fname, \
+            #     restored_repeat_first_rpn_results.regions_dict, vis_rpn_direc)
+
+            # Put first frame results into final
+            final_results.combine_results(ori_first_results, \
+                self.config.intersection_threshold)
+            final_rpn_results.combine_results(ori_first_rpn_results, \
+                self.config.intersection_threshold)
+
+            # Check if some regions are not detected in merged first frame
+            ori_all_results = Results()
+            ori_all_results.combine_results(ori_first_results, self.config.intersection_threshold)
+            ori_all_results.combine_results(ori_first_rpn_results, self.config.intersection_threshold)
+            repeat_all_results = Results()
+            repeat_all_results.combine_results(restored_repeat_first_results, 
+                self.config.intersection_threshold)
+            repeat_all_results.combine_results(restored_repeat_first_rpn_results, 
+                self.config.intersection_threshold)
+            missed_results = Results()
+            for fid, ori_region_list in ori_all_results.regions_dict.items():
+                for ori_region in ori_region_list:
+                    if ori_region.w * ori_region.h > max_area_thresh:
+                        continue
+                    find_match = False
+                    if fid not in repeat_all_results.regions_dict.keys():
+                        missed_results.append(ori_region)
+                        continue
+                    for repeat_region in repeat_all_results.regions_dict[fid]:
+                        if calc_iou(ori_region, repeat_region) > iou_thresh:
+                            find_match = True
+                            break
+                    if not find_match:
+                        ori_region.label = "object"
+                        missed_results.append(ori_region)
+            
+            # vis_miss_direc = f"{video_name}-vis_miss"
+            # draw_region_rectangle(base_images_direc, first_fname, 
+            #     missed_results.regions_dict, vis_miss_direc)
+
+            # Get those merged, enlarged regions in each remaining frame
+            missed_results = merge_boxes_in_results(missed_results.regions_dict, -1, 0)
+            remain_small_regions_list = []
+            for fid, regions_list in missed_results.regions_dict.items():
+                for single_region in regions_list:
+                    single_region.enlarge(self.config.enlarge_first_rpn)
+                    for region_fid in range(start_frame+1, end_frame):
+                        copy_single_region = single_region.copy()
+                        copy_single_region.fid = region_fid
+                        remain_small_regions_list.append(copy_single_region)
+            
+            # First run on entire frame
+            remain_whole_region_list = []
+            remain_fnames = []
+            for region_fid in range(start_frame+1, end_frame):
+                remain_whole_region_list.append(
+                    Region(region_fid, 0, 0, 1, 1, 1.0, 2, whole_res))
+                remain_fnames.append(f"{str(region_fid).zfill(10)}.png")
+            remain_whole_direc = f"{video_name}_whole_direc"
+            merged_whole_maps = merge_frame_change_res(base_images_direc, remain_whole_region_list, \
+                whole_res, large_object_res, whole_res, remain_whole_direc)
+            remain_whole_fnames = sorted([f for f in os.listdir(remain_whole_direc) if "png" in f])
+            total_frame_cnt += len(remain_whole_fnames)
+            whole_results, whole_rpn_results, whole_all_rpn = \
+                self.server.perform_detection(remain_whole_direc, 
+                    whole_res, remain_whole_fnames)
+            vis_merged_whole_res = f"{video_name}-vis_whole_merged_res"
+            draw_region_rectangle(remain_whole_direc, remain_whole_fnames, \
+                whole_results.regions_dict, vis_merged_whole_res, display_result=True)
+            vis_merged_whole_all_rpn = f"{video_name}-vis_whole_merged_all_rpn"
+            draw_region_rectangle(remain_whole_direc, remain_whole_fnames, \
+                whole_all_rpn.regions_dict, vis_merged_whole_all_rpn)
+            restored_whole_results = restore_frame_change_res(whole_results, merged_whole_maps,\
+                # min_area_thresh=self.config.size_obj / ((whole_res/large_object_res)**2) 
+            )
+            restored_whole_rpn_results = restore_frame_change_res(whole_rpn_results, merged_whole_maps, \
+                # min_area_thresh=self.config.size_obj / ((whole_res/large_object_res)**2) 
+            )
+            final_results.combine_results(restored_whole_results, \
+                self.config.intersection_threshold)
+            final_rpn_results.combine_results(restored_whole_rpn_results, \
+                self.config.intersection_threshold)
+            vis_whole_res = f"{video_name}-vis_whole_res"
+            vis_whole_rpn = f"{video_name}-vis_whole_rpn"
+            draw_region_rectangle(base_images_direc, remain_fnames, \
+                restored_whole_results.regions_dict, vis_whole_res, display_result=True)
+            draw_region_rectangle(base_images_direc, remain_fnames, \
+                restored_whole_rpn_results.regions_dict, vis_whole_rpn)
+            shutil.rmtree(remain_whole_direc)
+
+            # Then run on small regions
+            remain_small_direc = f"{video_name}_small_direc"
+            merged_small_maps = merge_frame_change_res(base_images_direc, remain_small_regions_list, \
+                whole_res, small_object_res, whole_res, remain_small_direc)
+            remain_small_fnames = sorted([f for f in os.listdir(remain_small_direc) if "png" in f])
+            total_frame_cnt += len(remain_small_fnames)
+            small_results, small_rpn_results, small_all_rpn  = \
+                self.server.perform_detection(remain_small_direc, \
+                    whole_res, remain_small_fnames)
+            # vis_merged_small_res = f"{video_name}-vis_small_merged_res"
+            # draw_region_rectangle(remain_small_direc, remain_small_fnames, \
+            #     small_results.regions_dict, vis_merged_small_res, display_result=True)
+            # vis_merged_small_all_rpn = f"{video_name}-vis_small_merged_all_rpn"
+            # draw_region_rectangle(remain_small_direc, remain_small_fnames, \
+            #     small_all_rpn.regions_dict, vis_merged_small_all_rpn)
+            restored_small_results = restore_frame_change_res(small_results, merged_small_maps, \
+                max_area_thresh=self.config.size_obj)
+            restored_small_rpn_results = restore_frame_change_res(small_rpn_results, merged_small_maps, \
+                max_area_thresh=self.config.size_obj)
+            final_results.combine_results(restored_small_results, \
+                self.config.intersection_threshold)
+            final_rpn_results.combine_results(restored_small_rpn_results, \
+                self.config.intersection_threshold)
+            # vis_small_res = f"{video_name}-vis_small_res"
+            # vis_small_rpn = f"{video_name}-vis_small_rpn"
+            # draw_region_rectangle(base_images_direc, remain_fnames, \
+            #     restored_small_results.regions_dict, vis_small_res, display_result=True)
+            # draw_region_rectangle(base_images_direc, remain_fnames, \
+            #     restored_small_rpn_results.regions_dict, vis_small_rpn)
+            shutil.rmtree(remain_small_direc)
+
+            # Remove encoded video manually
+            shutil.rmtree(base_images_direc)
+            total_size += batch_video_size
+            import ipdb; ipdb.set_trace()
+        
+        final_results = merge_boxes_in_results(
+            final_results.regions_dict, 
+            self.config.low_threshold, self.config.suppression_threshold)
+        
+        # final_rpn_results = merge_boxes_in_results(
+        #     final_rpn_results.regions_dict, 
+        #     -1, self.config.suppression_threshold)
+        final_results.fill_gaps(number_of_frames)
+
+        # Add RPN regions
+        final_results.combine_results(
+            final_rpn_results, self.config.intersection_threshold)
+
+        final_results.write(video_name)
+        total_time = (timeit.default_timer() - total_start)
+        self.logger.info(f"Infer time {total_infer_time} for "
+                        f"{total_frame_cnt} frames, "
+                        f"total elapsed time {total_time}")
+        if out_cost_file:
+            write_compute_cost(out_cost_file, video_name, total_frame_cnt, 
                 0, 0, total_infer_time, total_time)
 
         return final_results, [total_size, 0]
@@ -235,6 +450,7 @@ class Client:
         low_phase_results = Results()
         high_phase_results = Results()
         total_req_regions = Results()
+        filtered_total_req_regions = Results()
         total_infer_time = 0
         total_time = 0
 
@@ -303,6 +519,12 @@ class Client:
                 total_infer_time += infer_elapsed
                 self.logger.info(f"Got {len(r2)} results in second phase "
                                  f"of batch")
+                
+                # Filter req_regions in this batch by r2
+                filtered_req_regions_result, dds_results = \
+                    get_filtered_req_regions(r2, req_regions, start_fid, low_images_path)
+                filtered_total_req_regions.combine_results(
+                    filtered_req_regions_result, self.config.intersection_threshold)
 
                 high_phase_results.combine_results(
                     r2, self.config.intersection_threshold)
@@ -348,6 +570,7 @@ class Client:
         final_results.fill_gaps(number_of_frames)
         final_results.write(f"{video_name}")
         total_req_regions.write(f"{video_name}-req_regions")
+        filtered_total_req_regions.write(f"{video_name}-filtered_req_regions")
         high_phase_results.write(f"{video_name}-high_phase_results")
 
         

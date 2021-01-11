@@ -8,8 +8,9 @@ from dds_utils import (ServerConfig, read_results_dict, Results, merge_boxes_in_
                        evaluate, write_stats)
 from reduce_Bcost.streamB_infer import (analyze_dds_filtered, analyze_dds_filtered_resize, 
                         analyze_low_guide)
-from reduce_Bcost.streamB_utils import (draw_region_rectangle)
+from reduce_Bcost.streamB_utils import (draw_region_rectangle, filter_true_regions)
 from reduce_Bcost.resize_regions import (test_for_efficiency)
+from irregular_regions.irregular_infer import (analyze_only_objects)
 import ipdb
 import shutil
 import sys
@@ -36,7 +37,15 @@ def main(args):
     server = None
     mode = None
     results, bw = None, None
-    if args.req_regions_fname:
+    cur_method = args.method
+    if cur_method == "onlyObjects":
+        mode = "onlyObjects"
+        logger.warning("Only contain object regions")
+        server = Server(config)
+        results, bw = analyze_only_objects(server, args.video_name, args.low_results_path, 
+            args.region_enlarge_ratio, args.high_images_path, args.cleanup, args.out_cost_file)
+        
+    elif cur_method == "streamBpack":
         mode = 'streamBpack'
         logger.warning("Reduce streamB cost")
         server = Server(config)
@@ -46,10 +55,15 @@ def main(args):
         for fid, region_list in req_regions.items():
             for region_item in region_list:
                 req_regions_result.append(region_item)
+        filtered_req_regions = read_results_dict(args.filtered_req_regions_fname)
+        filtered_req_regions_result = Results()
+        for fid, region_list in filtered_req_regions.items():
+            for region_item in region_list:
+                filtered_req_regions_result.append(region_item)
 
         if args.resize_method == 'resize_no':
             results, bw = analyze_dds_filtered(
-                server, args.video_name, req_regions_result, args.low_results_path,  
+                server, args.video_name, req_regions_result, filtered_req_regions_result, args.low_results_path,  
                 args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
                 args.intersect_iou, args.merge_iou, args.filter_method,
                 cleanup=args.cleanup, out_cost_file=args.out_cost_file
@@ -57,7 +71,7 @@ def main(args):
         else:
             resize_max_area = float(args.resize_method.split('_')[1])
             results, bw = analyze_dds_filtered_resize(
-                server, args.video_name, req_regions_result, args.low_results_path,  
+                server, args.video_name, req_regions_result, filtered_req_regions_result, args.low_results_path,  
                 args.context_padding_type, args.context_val, args.blank_padding_type, args.blank_val,
                 args.intersect_iou, args.merge_iou, resize_max_area, args.filter_method,
                 cleanup=args.cleanup, out_cost_file=args.out_cost_file
@@ -106,9 +120,17 @@ def main(args):
 
         logger.info("Starting client")
         client = Client(args.hname, config, server)
-        results, bw = client.analyze_video_merged_mpeg(
-            args.video_name, args.high_images_path, args.enforce_iframes, args.single_frame_cnt,
-            out_cost_file=args.out_cost_file)
+        if args.reduce_low:
+            results, bw = client.analyze_video_reduced_mpeg(
+                args.video_name, args.high_images_path, args.enforce_iframes, 
+                args.low_resolution, args.merged_frame_res,
+                out_cost_file=args.out_cost_file)
+        else:
+            results, bw = client.analyze_video_mpeg(
+                args.video_name, args.high_images_path, args.enforce_iframes,
+                out_cost_file=args.out_cost_file)
+        
+
     elif not args.simulate and args.hname:
         mode = "implementation"
         logger.warning(
